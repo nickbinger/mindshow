@@ -3,4 +3,5 @@ matplotlib==3.10.5
 dearpygui==2.1.0
 numpy==2.3.2
 bleak==1.0.1
-scipy==1.16.1 
+scipy==1.16.1
+websockets==12.0 

@@ -17,25 +17,30 @@ Muse S Gen 2 (EEG) → BLE → Raspberry Pi Zero 2 W → WebSocket → Pixelblaz
 ### Phase 1: Laptop + Muse + BrainFlow GUI ✅
 - [x] Set up Python environment
 - [x] Install dependencies
-- [ ] Pair Muse via BLE
-- [ ] Connect to Muse via BrainFlow
-- [ ] Add basic GUI/visualization
-- [ ] Commit and push to GitHub
+- [x] Pair Muse via BLE
+- [x] Connect to Muse via BrainFlow
+- [x] Add basic GUI/visualization
+- [x] Commit and push to GitHub
 
-### Phase 2: Raspberry Pi Setup (Future)
+### Phase 2: Pixelblaze Integration + Brainwave Analysis 🔄
+- [ ] Install Pixelblaze WebSocket client
+- [ ] Implement BrainFlow attention/relaxation detection
+- [ ] Create real-time brainwave state classification
+- [ ] Connect to Pixelblaze via WebSocket
+- [ ] Implement color palette changes (relaxed=blue, engaged=red)
+- [ ] Test real-time LED pattern modification
+
+### Phase 3: Raspberry Pi Setup (Future)
 - [ ] Set up Pi Zero 2 W with BrainFlow
 - [ ] Test BLE connection on Pi
 - [ ] Implement data processing pipeline
-
-### Phase 3: LED Integration (Future)
-- [ ] Connect to Pixelblaze via WebSocket
-- [ ] Design LED patterns for different brain states
-- [ ] Test LED control
+- [ ] Port Pixelblaze integration to Pi
 
 ### Phase 4: Wearable Integration (Future)
 - [ ] Combine EEG + motion + optional sensors
 - [ ] Optimize for battery life
 - [ ] Heat management
+- [ ] Final LED hat assembly
 
 ## 🚀 Quick Start
 
@@ -78,10 +83,13 @@ Muse S Gen 2 (EEG) → BLE → Raspberry Pi Zero 2 W → WebSocket → Pixelblaz
 
 ```
 mindshow/
-├── config.py              # Configuration settings
-├── muse_connection.py     # Initial Muse connection test
-├── requirements.txt       # Python dependencies
-└── README.md             # This file
+├── config.py                    # Configuration settings
+├── muse_connection.py           # Initial Muse connection test
+├── data_monitor.py              # Text-based EEG data verification
+├── eeg_visualizer.py            # Real-time EEG visualization with brainwave analysis
+├── pixelblaze_integration.py    # Phase 2: EEG to LED integration
+├── requirements.txt             # Python dependencies
+└── README.md                   # This file
 ```
 
 ## 🔧 Configuration
