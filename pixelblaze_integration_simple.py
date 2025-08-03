@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-MindShow EEG LED Hat - Pixelblaze Integration
-Phase 2: Connect brainwave analysis to Pixelblaze LED patterns
+MindShow EEG LED Hat - Pixelblaze Integration with Simple Display
+Phase 2: Connect brainwave analysis to Pixelblaze LED patterns with simple text output
 """
 
 import asyncio
@@ -9,6 +9,7 @@ import websockets
 import json
 import logging
 import time
+import os
 from brainflow.board_shim import BoardShim, BrainFlowInputParams, BoardIds
 from brainflow.data_filter import DataFilter, FilterTypes, AggOperations
 import config
@@ -20,6 +21,61 @@ logging.basicConfig(
     format=config.LOG_FORMAT
 )
 logger = logging.getLogger(__name__)
+
+class SimpleBrainStateDisplay:
+    """Simple text display for brain state"""
+    
+    def __init__(self):
+        self.brain_state = "neutral"
+        self.attention_score = 0.5
+        self.relaxation_score = 0.5
+        self.running = False
+        
+    def clear_screen(self):
+        """Clear the terminal screen"""
+        os.system('clear' if os.name == 'posix' else 'cls')
+    
+    def display_state(self):
+        """Display the current brain state"""
+        self.clear_screen()
+        
+        print("=" * 50)
+        print("🧠 MindShow EEG LED Controller")
+        print("=" * 50)
+        print()
+        
+        # Brain State
+        if self.brain_state == "relaxed":
+            state_color = "🔵"
+            led_color = "🔵 BLUE"
+        elif self.brain_state == "engaged":
+            state_color = "🔴"
+            led_color = "🔴 RED"
+        else:
+            state_color = "🟢"
+            led_color = "🟢 GREEN"
+        
+        print(f"Brain State: {state_color} {self.brain_state.upper()}")
+        print(f"Attention Score: {self.attention_score:.3f}")
+        print(f"Relaxation Score: {self.relaxation_score:.3f}")
+        print()
+        print(f"Expected LED Color: {led_color}")
+        print()
+        print("Instructions:")
+        print("• Relax your mind → Blue LEDs")
+        print("• Focus/engage → Red LEDs")
+        print("• Neutral state → Green LEDs")
+        print("• Press Ctrl+C to exit")
+        print()
+        print("Status: Running")
+        print("=" * 50)
+    
+    def update_state(self, brain_state, attention_score, relaxation_score):
+        """Update the brain state and display"""
+        self.brain_state = brain_state
+        self.attention_score = attention_score
+        self.relaxation_score = relaxation_score
+        self.display_state()
 
 class PixelblazeController:
     """Controls Pixelblaze LED patterns based on brainwave analysis"""
@@ -39,19 +95,6 @@ class PixelblazeController:
             return True
         except Exception as e:
             logger.error(f"Failed to connect to Pixelblaze: {e}")
-            return False
-    
-    async def send_command(self, command):
-        """Send a command to Pixelblaze"""
-        if not self.connected or not self.websocket:
-            return False
-        
-        try:
-            await self.websocket.send(json.dumps(command))
-            return True
-        except Exception as e:
-            logger.error(f"Failed to send command: {e}")
-            self.connected = False
             return False
     
     async def set_color_palette(self, brain_state):
@@ -74,11 +117,6 @@ class PixelblazeController:
         await self.websocket.send(json.dumps({"setVars": {"brightness": brightness}}))
         response = await self.websocket.recv()
         logger.info(f"Brightness response: {response}")
-    
-    async def set_speed(self, speed):
-        """Set animation speed (0-1) - not used in cursor_test pattern"""
-        # The cursor_test pattern doesn't have a speed variable
-        pass
 
 class BrainwaveAnalyzer:
     """Analyzes brainwave data for attention/relaxation states"""
@@ -187,16 +225,20 @@ class BrainwaveAnalyzer:
             return "neutral"
 
 class MindShowController:
-    """Main controller for EEG to LED integration"""
+    """Main controller for EEG to LED integration with simple display"""
     
     def __init__(self):
         self.brain_analyzer = BrainwaveAnalyzer()
         self.pixelblaze = PixelblazeController()
+        self.display = SimpleBrainStateDisplay()
         self.running = False
         
     async def start(self):
-        """Start the mind-controlled LED system"""
-        logger.info("=== MindShow EEG LED Controller ===")
+        """Start the mind-controlled LED system with simple display"""
+        logger.info("=== MindShow EEG LED Controller with Simple Display ===")
+        
+        # Show initial display
+        self.display.display_state()
         
         # Connect to Muse
         if not self.brain_analyzer.connect_to_muse():
@@ -216,7 +258,7 @@ class MindShowController:
         
         # Keep track of time for periodic tasks
         last_keepalive = time.time()
-        last_log = time.time()
+        last_display_update = time.time()
         
         try:
             while self.running:
@@ -253,13 +295,13 @@ class MindShowController:
                     # Classify brain state
                     brain_state = self.brain_analyzer.classify_brain_state(attention_score, relaxation_score)
                     
+                    # Update display every 0.5 seconds
+                    if current_time - last_display_update >= 0.5:
+                        self.display.update_state(brain_state, attention_score, relaxation_score)
+                        last_display_update = current_time
+                    
                     # Update LED patterns based on brain state
                     await self.update_led_pattern(brain_state, attention_score, relaxation_score)
-                    
-                    # Log state every 5 seconds
-                    if current_time - last_log >= 5:
-                        logger.info(f"Brain State: {brain_state} | Attention: {attention_score:.2f} | Relaxation: {relaxation_score:.2f}")
-                        last_log = current_time
                 
                 await asyncio.sleep(0.1)  # 10 Hz update rate
                 
@@ -286,6 +328,7 @@ class MindShowController:
     async def stop(self):
         """Stop the controller and clean up"""
         self.running = False
+        
         if self.brain_analyzer.board:
             try:
                 self.brain_analyzer.board.stop_stream()
@@ -299,7 +342,7 @@ class MindShowController:
             logger.info("Disconnected from Pixelblaze")
 
 async def main():
-    """Main function to run the MindShow controller"""
+    """Main function to run the MindShow controller with simple display"""
     controller = MindShowController()
     await controller.start()
 
