@@ -1,0 +1,4 @@
+brainflow==5.18.0
+matplotlib==3.10.5
+dearpygui==2.1.0
+numpy==2.3.2 
