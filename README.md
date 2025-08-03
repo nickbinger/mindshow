@@ -22,13 +22,17 @@ Muse S Gen 2 (EEG) → BLE → Raspberry Pi Zero 2 W → WebSocket → Pixelblaz
 - [x] Add basic GUI/visualization
 - [x] Commit and push to GitHub
 
-### Phase 2: Pixelblaze Integration + Brainwave Analysis 🔄
-- [ ] Install Pixelblaze WebSocket client
-- [ ] Implement BrainFlow attention/relaxation detection
-- [ ] Create real-time brainwave state classification
-- [ ] Connect to Pixelblaze via WebSocket
-- [ ] Implement color palette changes (relaxed=blue, engaged=red)
-- [ ] Test real-time LED pattern modification
+### Phase 2: Pixelblaze Integration + Brainwave Analysis ✅
+- [x] Install Pixelblaze WebSocket client
+- [x] Implement BrainFlow attention/relaxation detection
+- [x] Create real-time brainwave state classification
+- [x] Connect to Pixelblaze via WebSocket
+- [x] Implement color palette changes (relaxed=blue, engaged=red)
+- [x] Test real-time LED pattern modification
+- [x] **FIXED: Color mapping issues** (red/blue hue values swapped)
+- [x] **FIXED: GUI/LED synchronization** (real-time updates)
+- [x] **ENHANCED: Muse keep-alive mechanism** (prevents sleep)
+- [x] **ADDED: Robust connection verification** and error handling
 
 ### Phase 3: Raspberry Pi Setup (Future)
 - [ ] Set up Pi Zero 2 W with BrainFlow
@@ -48,6 +52,7 @@ Muse S Gen 2 (EEG) → BLE → Raspberry Pi Zero 2 W → WebSocket → Pixelblaz
 - Python 3.10+
 - Muse S Gen 2 EEG headband
 - Bluetooth-enabled computer
+- Pixelblaze V3 controller (for Phase 2+)
 
 ### Installation
 
@@ -79,6 +84,11 @@ Muse S Gen 2 (EEG) → BLE → Raspberry Pi Zero 2 W → WebSocket → Pixelblaz
    python muse_connection.py
    ```
 
+6. **Run the full system (Phase 2)**
+   ```bash
+   python pixelblaze_integration_simple_gui.py
+   ```
+
 ## 📁 Project Structure
 
 ```
@@ -87,7 +97,10 @@ mindshow/
 ├── muse_connection.py           # Initial Muse connection test
 ├── data_monitor.py              # Text-based EEG data verification
 ├── eeg_visualizer.py            # Real-time EEG visualization with brainwave analysis
-├── pixelblaze_integration.py    # Phase 2: EEG to LED integration
+├── pixelblaze_integration_simple_gui.py  # ✅ WORKING: Full EEG-to-LED system
+├── test_colors.py               # Color mapping verification
+├── test_muse_connection.py      # Muse connection testing
+├── test_single_color.py         # Individual color testing
 ├── requirements.txt             # Python dependencies
 └── README.md                   # This file
 ```
@@ -98,48 +111,47 @@ Edit `config.py` to customize:
 - Muse MAC address
 - Sample rate
 - Buffer sizes
-- Logging levels
+- Pixelblaze IP address
 
-## 📊 Expected Output
+## 🎨 Current Features (Phase 2 Complete)
 
-When running `muse_connection.py` successfully, you should see:
-```
-INFO - Data shape: (5, 1280)
-INFO - Number of channels: 5
-INFO - Number of samples: 1280
-INFO - Sample data from first channel:
-INFO - First 10 samples: [123.45, 124.67, ...]
-INFO - Data range: -500.00 to 500.00
-```
+### Real-time Brainwave Analysis
+- **Attention Detection**: Beta wave analysis for focus/engagement
+- **Relaxation Detection**: Alpha wave analysis for calm states
+- **State Classification**: Automatic brain state classification
+- **10Hz Update Rate**: Real-time processing and display
+
+### LED Control
+- **Color Mapping**: 
+  - 🔴 **Engaged/Focused** → RED LEDs
+  - 🔵 **Relaxed/Calm** → BLUE LEDs  
+  - 🟢 **Neutral** → GREEN LEDs
+- **Brightness Control**: Dynamic brightness based on brainwave intensity
+- **Real-time Updates**: Synchronized GUI and LED updates
+
+### GUI Interface
+- **Real-time Display**: Live brain state, attention, and relaxation scores
+- **Color-coded States**: Visual indicators for each brain state
+- **Synchronized Updates**: GUI and LED changes happen together
+
+### System Reliability
+- **Enhanced Keep-alive**: Prevents Muse from sleeping
+- **Connection Verification**: Robust error handling and reconnection
+- **Stable Operation**: Long-running sessions without disconnections
 
 ## 🐛 Troubleshooting
 
-### Common Issues
+### Color Issues
+If colors appear swapped, run the color test:
+```bash
+python test_colors.py
+```
 
-1. **"Failed to connect to Muse"**
-   - Ensure Muse is turned on and in pairing mode
-   - Verify MAC address in `config.py`
-   - Check Bluetooth is enabled
-   - Try using nRF Connect to verify Muse is advertising
+### Connection Issues
+Test Muse connection:
+```bash
+python test_muse_connection.py
+```
 
-2. **"Permission denied" errors**
-   - On macOS, grant Bluetooth permissions to Terminal/VS Code
-   - On Linux, ensure user is in `bluetooth` group
-
-3. **Import errors**
-   - Ensure virtual environment is activated
-   - Run `pip install -r requirements.txt`
-
-## 🤝 Contributing
-
-This is a personal project for Burning Man 2024. Feel free to fork and adapt for your own projects!
-
-## 📄 License
-
-MIT License - see LICENSE file for details.
-
-## 🙏 Acknowledgments
-
-- BrainFlow team for the excellent EEG library
-- Muse team for the accessible EEG hardware
-- Burning Man community for inspiration 
+### GUI Issues
+The system uses Tkinter which may have threading issues. The core functionality works even if the GUI crashes. 
