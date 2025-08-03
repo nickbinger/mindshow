@@ -1,0 +1,65 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mindshow"
+version = "0.2.0"
+description = "Real-time brainwave visualization with LED animations for Burning Man"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    # Biometric data acquisition
+    "brainflow>=5.18.0",
+    "muselsl>=2.0.0",
+    "pylsl>=1.16.0",
+    
+    # Bluetooth LE
+    "bleak>=1.0.1",
+    
+    # LED control
+    "rpi_ws281x>=5.0.0; sys_platform == 'linux'",
+    "adafruit-circuitpython-neopixel>=6.3.0",
+    
+    # Web UI
+    "fastapi>=0.100.0",
+    "uvicorn>=0.23.0",
+    "websockets>=12.0",
+    
+    # Data processing
+    "numpy>=2.3.2",
+    "scipy>=1.16.1",
+    
+    # GUI (current implementation)
+    "tkinter; sys_platform != 'linux'",
+    
+    # Utilities
+    "loguru>=0.7.0",
+    "pydantic>=2.0.0",
+    "click>=8.1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-mock>=3.11.0",
+    "ruff>=0.1.0",
+    "mypy>=1.5.0",
+]
+
+[project.scripts]
+mindshow = "mindshow.cli:main"
+
+[tool.ruff]
+line-length = 88
+target-version = "py39"
+select = ["E", "F", "I", "N", "UP", "B"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = [
+    "hardware: marks tests requiring physical hardware",
+    "slow: marks slow-running tests",
+] 
