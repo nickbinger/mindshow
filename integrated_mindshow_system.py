@@ -1372,11 +1372,19 @@ class MindShowDashboard:
                 const ws = new WebSocket('ws://localhost:8000/ws');
                 const maxDataPoints = 50;
                 let brainwaveData = [];
+                let lastUpdateTime = 0;
+                const UPDATE_THROTTLE = 500; // Only update UI every 500ms
                 
                 ws.onopen = () => console.log('Dashboard connected');
                 ws.onmessage = (event) => {
                     const data = JSON.parse(event.data);
-                    updateDashboard(data);
+                    const now = Date.now();
+                    
+                    // Throttle updates to prevent UI flickering
+                    if (now - lastUpdateTime > UPDATE_THROTTLE) {
+                        updateDashboard(data);
+                        lastUpdateTime = now;
+                    }
                 };
                 
                 function updateDashboard(data) {
@@ -1686,15 +1694,33 @@ class MindShowDashboard:
                     
                     // Populate device selector when devices are available
                     function updateDeviceSelector(devices) {
-                        deviceSelector.innerHTML = '<option value="">Select a device...</option>';
-                        devices.forEach(device => {
-                            if (device.connected) {
-                                const option = document.createElement('option');
-                                option.value = device.ip;
-                                option.textContent = `${device.name} (${device.ip})`;
-                                deviceSelector.appendChild(option);
+                        // Preserve current selection
+                        const currentSelection = deviceSelector.value;
+                        
+                        // Only update if the device list has actually changed
+                        const currentOptions = Array.from(deviceSelector.options).map(opt => opt.value);
+                        const newOptions = devices.filter(d => d.connected).map(d => d.ip);
+                        
+                        // Check if the lists are different
+                        const hasChanged = currentOptions.length !== newOptions.length || 
+                                         !currentOptions.every((opt, i) => opt === newOptions[i]);
+                        
+                        if (hasChanged) {
+                            deviceSelector.innerHTML = '<option value="">Select a device...</option>';
+                            devices.forEach(device => {
+                                if (device.connected) {
+                                    const option = document.createElement('option');
+                                    option.value = device.ip;
+                                    option.textContent = `${device.name} (${device.ip})`;
+                                    deviceSelector.appendChild(option);
+                                }
+                            });
+                            
+                            // Restore selection if it still exists
+                            if (currentSelection && newOptions.includes(currentSelection)) {
+                                deviceSelector.value = currentSelection;
                             }
-                        });
+                        }
                     }
                     
                     // Populate pattern selector when device is selected
