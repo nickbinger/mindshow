@@ -103,6 +103,14 @@ Muse EEG → Brainwave Processing → Mood Index → LED Control → Visual Art
 - Optimize update rates for responsiveness without overwhelming device
 - Test mood-based palette changes with live brainwave data
 
+### **🔄 Phase 4b: Perceptual Color Mood Slider (PLANNED)**
+*Advanced color theory for brainwave-to-LED mapping*
+- Implement perceptual color biasing from warm to cool tones
+- Master hue range compression maintaining spectrum integrity
+- Create dynamic `colorMoodBias` slider for brain state mapping
+- Implement RGB channel biasing and palette-based mapping
+- Research-based approach avoiding disruptive hue rotation
+
 ### **🔄 Phase 5: Multi-Device Orchestration (PLANNED)**
 *Raspberry Pi controlling 4+ Pixelblaze units*
 - Configure Pi Zero 2 W as WiFi access point for Pixelblaze network
