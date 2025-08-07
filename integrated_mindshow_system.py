@@ -74,7 +74,7 @@ class MindShowConfig:
     
     # Pixelblaze Settings  
     pixelblaze_port: int = 81
-    discovery_timeout: float = 5.0
+    discovery_timeout: float = 10.0  # Increased from 5.0 to 10.0
     max_controllers: int = 4
     connection_retry_attempts: int = 3
     connection_timeout: float = 10.0
@@ -1926,10 +1926,21 @@ class MindShowIntegratedSystem:
             logger.warning("⚠️  No EEG source available - starting in demo mode")
             logger.info("💡 Connect your Muse headband and restart to enable brainwave control")
         
-        # Discover and connect Pixelblaze devices
-        connected_devices = await self.pixelblaze_controller.discover_and_connect()
+        # Discover and connect Pixelblaze devices with retry logic
+        connected_devices = 0
+        max_retries = 3
+        for attempt in range(max_retries):
+            logger.info(f"🔍 Attempting Pixelblaze discovery (attempt {attempt + 1}/{max_retries})")
+            connected_devices = await self.pixelblaze_controller.discover_and_connect()
+            if connected_devices > 0:
+                logger.info(f"✅ Successfully connected to {connected_devices} Pixelblaze device(s)")
+                break
+            elif attempt < max_retries - 1:
+                logger.warning(f"⚠️  No devices found on attempt {attempt + 1}, retrying in 2 seconds...")
+                await asyncio.sleep(2)
+        
         if connected_devices == 0:
-            logger.warning("⚠️  No Pixelblaze devices connected - continuing without LED control")
+            logger.warning("⚠️  No Pixelblaze devices connected after all retries - continuing without LED control")
         
         # Start web dashboard
         dashboard_task = asyncio.create_task(self._run_dashboard())
