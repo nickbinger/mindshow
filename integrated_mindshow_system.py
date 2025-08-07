@@ -478,18 +478,34 @@ class MultiPixelblazeController:
         self.last_brain_state = "neutral"
         
         # Brain state to LED mappings (research-based)
+        # Phase 4b: Perceptual color mood integration
         self.state_mappings = {
             'engaged': {
                 'pattern_name': 'sparkfire',  # High-energy pattern
-                'variables': {'hue': 0.0, 'brightness': 0.9, 'speed': 0.8}  # Red, bright
+                'variables': {
+                    'hue': 0.0,           # Red, bright
+                    'brightness': 0.9, 
+                    'speed': 0.8,
+                    'colorMoodBias': 0.2  # Warm bias (0 = full warm, 1 = full cool)
+                }
             },
             'relaxed': {
                 'pattern_name': 'slow waves',  # Calm pattern  
-                'variables': {'hue': 0.67, 'brightness': 0.5, 'speed': 0.3}  # Blue, dim
+                'variables': {
+                    'hue': 0.67,          # Blue, dim
+                    'brightness': 0.5, 
+                    'speed': 0.3,
+                    'colorMoodBias': 0.8  # Cool bias
+                }
             },
             'neutral': {
                 'pattern_name': 'rainbow',  # Balanced pattern
-                'variables': {'hue': 0.33, 'brightness': 0.7, 'speed': 0.5}  # Green, medium
+                'variables': {
+                    'hue': 0.33,          # Green, medium
+                    'brightness': 0.7, 
+                    'speed': 0.5,
+                    'colorMoodBias': 0.5  # Neutral (no bias)
+                }
             }
         }
     
@@ -608,7 +624,34 @@ class MultiPixelblazeController:
         # Get mapping for this brain state
         mapping = self.state_mappings.get(brain_state, self.state_mappings['neutral'])
         target_pattern = mapping['pattern_name']
-        target_variables = mapping['variables']
+        target_variables = mapping['variables'].copy()  # Copy to avoid modifying defaults
+        
+        # Phase 4b: Calculate dynamic color mood bias based on brainwave data
+        if brain_data:
+            attention = brain_data.get('attention_score', 0.5)
+            relaxation = brain_data.get('relaxation_score', 0.5)
+            
+            # Dynamic color mood calculation:
+            # High attention -> warm bias (lower values)
+            # High relaxation -> cool bias (higher values)
+            # Balanced -> neutral (0.5)
+            
+            # Use weighted average with non-linear mapping for perceptual smoothness
+            # Attention pulls toward warm (0.0), relaxation pulls toward cool (1.0)
+            color_mood = 0.5 - (attention - 0.5) * 0.6 + (relaxation - 0.5) * 0.6
+            
+            # Clamp to valid range [0.0, 1.0]
+            color_mood = max(0.0, min(1.0, color_mood))
+            
+            # Apply easing curve for more natural perception (S-curve)
+            # This makes the middle range more stable and extremes more pronounced
+            if color_mood < 0.5:
+                color_mood = 0.5 * pow(color_mood * 2, 2)
+            else:
+                color_mood = 1.0 - 0.5 * pow((1.0 - color_mood) * 2, 2)
+            
+            target_variables['colorMoodBias'] = round(color_mood, 3)
+            logger.debug(f"🎨 Color mood bias: {target_variables['colorMoodBias']:.3f} (attention: {attention:.2f}, relaxation: {relaxation:.2f})")
         
         # Update all connected devices
         update_tasks = []
