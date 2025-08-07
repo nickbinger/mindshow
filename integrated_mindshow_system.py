@@ -976,6 +976,32 @@ class MindShowDashboard:
             except Exception as e:
                 logger.error(f"Error updating config: {e}")
                 return {"success": False, "error": str(e)}
+        
+        @self.app.post("/api/manual_mood")
+        async def manual_mood(request: dict):
+            """Send manual mood values to Pixelblaze"""
+            try:
+                color_mood = request.get("color_mood")
+                intensity = request.get("intensity")
+                
+                if color_mood is None or intensity is None:
+                    return {"success": False, "error": "Missing color_mood or intensity"}
+                
+                # Validate values
+                if not (0.0 <= color_mood <= 1.0 and 0.0 <= intensity <= 1.0):
+                    return {"success": False, "error": "Values must be between 0.0 and 1.0"}
+                
+                # Send to main system for Pixelblaze update
+                if hasattr(self, 'main_system'):
+                    success = self.main_system.send_manual_mood(color_mood, intensity)
+                    return {"success": success, "color_mood": color_mood, "intensity": intensity}
+                else:
+                    logger.warning("Main system not available for manual mood")
+                    return {"success": False, "error": "Main system not available"}
+                
+            except Exception as e:
+                logger.error(f"Error sending manual mood: {e}")
+                return {"success": False, "error": str(e)}
     
     async def broadcast_data(self, data: Dict[str, Any]):
         """Broadcast data to all connected clients"""
@@ -1223,6 +1249,28 @@ class MindShowDashboard:
                             <label for="relaxation-max-slider">Relaxation Max: <span id="relaxation-max-value">5.0</span></label>
                             <input type="range" id="relaxation-max-slider" min="1.0" max="10.0" step="0.5" value="5.0">
                         </div>
+                    </div>
+                </div>
+                
+                <!-- Manual Mood Control -->
+                <div class="metrics">
+                    <div class="metric">
+                        <h3>🎛️ Manual Mood Control</h3>
+                        <p style="font-size: 12px; opacity: 0.8; margin-bottom: 15px;">
+                            Test different color moods when no brain data is available
+                        </p>
+                        <div class="slider-control">
+                            <label for="manual-mood-slider">Color Mood (🔥 Warm → ❄️ Cool): <span id="manual-mood-value">0.5</span></label>
+                            <input type="range" id="manual-mood-slider" min="0.0" max="1.0" step="0.01" value="0.5">
+                        </div>
+                        <div class="slider-control">
+                            <label for="manual-intensity-slider">Intensity: <span id="manual-intensity-value">0.5</span></label>
+                            <input type="range" id="manual-intensity-slider" min="0.0" max="1.0" step="0.01" value="0.5">
+                        </div>
+                        <button id="send-manual-mood" style="margin-top: 10px; padding: 8px 16px; background: #4ecdc4; border: none; border-radius: 5px; color: white; cursor: pointer;">
+                            🎨 Send to Pixelblaze
+                        </button>
+                        <div id="manual-mood-status" style="margin-top: 10px; font-size: 12px; opacity: 0.8;"></div>
                     </div>
                 </div>
                 
@@ -1490,8 +1538,71 @@ class MindShowDashboard:
                     }
                 }
                 
+                // Manual Mood Control
+                function setupManualMoodControl() {
+                    const moodSlider = document.getElementById('manual-mood-slider');
+                    const moodValue = document.getElementById('manual-mood-value');
+                    const intensitySlider = document.getElementById('manual-intensity-slider');
+                    const intensityValue = document.getElementById('manual-intensity-value');
+                    const sendButton = document.getElementById('send-manual-mood');
+                    const statusDiv = document.getElementById('manual-mood-status');
+                    
+                    moodSlider.addEventListener('input', (e) => {
+                        const value = parseFloat(e.target.value);
+                        moodValue.textContent = value.toFixed(2);
+                    });
+                    
+                    intensitySlider.addEventListener('input', (e) => {
+                        const value = parseFloat(e.target.value);
+                        intensityValue.textContent = value.toFixed(2);
+                    });
+                    
+                    sendButton.addEventListener('click', () => {
+                        const moodValue = parseFloat(moodSlider.value);
+                        const intensityValue = parseFloat(intensitySlider.value);
+                        
+                        sendManualMood(moodValue, intensityValue);
+                    });
+                }
+                
+                function sendManualMood(mood, intensity) {
+                    const statusDiv = document.getElementById('manual-mood-status');
+                    statusDiv.textContent = '🔄 Sending to Pixelblaze...';
+                    
+                    fetch('/api/manual_mood', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            color_mood: mood,
+                            intensity: intensity
+                        })
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            statusDiv.textContent = `✅ Sent: Mood=${mood.toFixed(2)}, Intensity=${intensity.toFixed(2)}`;
+                            statusDiv.style.color = '#4ecdc4';
+                            showDebugMessage(`✅ Manual mood sent: ${mood.toFixed(2)} (intensity: ${intensity.toFixed(2)})`);
+                        } else {
+                            statusDiv.textContent = `❌ Failed: ${data.error}`;
+                            statusDiv.style.color = '#ff6b6b';
+                            showDebugMessage(`❌ Manual mood failed: ${data.error}`);
+                        }
+                    })
+                    .catch(error => {
+                        statusDiv.textContent = `❌ Error: ${error}`;
+                        statusDiv.style.color = '#ff6b6b';
+                        showDebugMessage(`❌ Manual mood error: ${error}`);
+                    });
+                }
+                
                 // Initialize sliders when page loads
-                document.addEventListener('DOMContentLoaded', setupSliders);
+                document.addEventListener('DOMContentLoaded', () => {
+                    setupSliders();
+                    setupManualMoodControl();
+                });
             </script>
         </body>
         </html>
@@ -1513,7 +1624,7 @@ class MindShowIntegratedSystem:
         self.pixelblaze_controller = MultiPixelblazeController(config)
         self.dashboard = MindShowDashboard()
         
-        # Give dashboard access to main system for config updates
+        # Connect dashboard to main system for API calls
         self.dashboard.main_system = self
         
         # Statistics
@@ -1541,6 +1652,33 @@ class MindShowIntegratedSystem:
                 return False
         except Exception as e:
             logger.error(f"❌ Error updating config: {e}")
+            return False
+    
+    def send_manual_mood(self, color_mood: float, intensity: float) -> bool:
+        """Send manual mood values to Pixelblaze"""
+        try:
+            # Create manual brain data with the specified mood
+            manual_brain_data = {
+                'brain_state': 'manual',
+                'attention': 0.5,  # Neutral attention
+                'relaxation': 0.5,  # Neutral relaxation
+                'engagement_level': intensity,
+                'color_mood': color_mood,
+                'timestamp': time.time(),
+                'source': 'manual',
+                'manual_mode': True
+            }
+            
+            # Update Pixelblaze with manual mood
+            asyncio.create_task(self.pixelblaze_controller.update_from_brain_state(
+                'manual', manual_brain_data
+            ))
+            
+            logger.info(f"🎨 Manual mood sent: {color_mood:.3f} (intensity: {intensity:.3f})")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to send manual mood: {e}")
             return False
     
     async def start(self):
