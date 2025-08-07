@@ -90,6 +90,12 @@ class MindShowConfig:
     color_mood_intensity_scale: float = 0.5  # Base intensity for color shifts
     color_mood_attention_weight: float = 0.4  # How much attention affects warm shift
     color_mood_relaxation_weight: float = 0.4  # How much relaxation affects cool shift
+    
+    # EEG Processing Parameters (for real-time adjustment)
+    attention_min: float = 0.0  # Minimum value for attention normalization
+    attention_max: float = 10.0  # Maximum value for attention normalization
+    relaxation_min: float = 0.0  # Minimum value for relaxation normalization
+    relaxation_max: float = 5.0  # Maximum value for relaxation normalization
 
 # =============================================================================
 # EEG PROCESSING
@@ -328,11 +334,38 @@ class IntegratedEEGProcessor:
         # Calculate attention and relaxation scores
         band_powers = raw_data['band_powers']
         attention_score = band_powers['beta'] / (band_powers['alpha'] + 1e-10)
-        relaxation_score = band_powers['alpha'] / (band_powers['theta'] + 1e-10)
         
-        # Normalize scores (0-1)
-        attention_score = min(1.0, max(0.0, attention_score / 2.0))
-        relaxation_score = min(1.0, max(0.0, relaxation_score / 2.0))
+        # Handle missing Theta band (common issue with Muse)
+        if np.isnan(band_powers['theta']) or band_powers['theta'] == 0:
+            # Use Alpha/Delta as fallback for relaxation
+            relaxation_score = band_powers['alpha'] / (band_powers['delta'] + 1e-10)
+            logger.debug(f"🔄 Using Alpha/Delta fallback for relaxation (Theta was nan)")
+        else:
+            relaxation_score = band_powers['alpha'] / (band_powers['theta'] + 1e-10)
+        
+        # Debug: Log raw values
+        logger.debug(f"🧠 Raw EEG - Alpha: {band_powers['alpha']:.4f}, Beta: {band_powers['beta']:.4f}, Theta: {band_powers['theta']:.4f}")
+        logger.debug(f"🧠 Raw Ratios - Attention: {attention_score:.4f}, Relaxation: {relaxation_score:.4f}")
+        
+        # Normalize scores using configurable parameters
+        attention_range = self.config.attention_max - self.config.attention_min
+        relaxation_range = self.config.relaxation_max - self.config.relaxation_min
+        
+        attention_score = min(1.0, max(0.0, (attention_score - self.config.attention_min) / attention_range))
+        relaxation_score = min(1.0, max(0.0, (relaxation_score - self.config.relaxation_min) / relaxation_range))
+        
+        # Debug: Log normalized values
+        logger.debug(f"🎛️ Normalized - Attention: {attention_score:.4f}, Relaxation: {relaxation_score:.4f}")
+        logger.debug(f"🎛️ Config - Att Min: {self.config.attention_min}, Att Max: {self.config.attention_max}")
+        logger.debug(f"🎛️ Config - Relax Min: {self.config.relaxation_min}, Relax Max: {self.config.relaxation_max}")
+        
+        # Fallback: If normalization results in 0, try a simpler approach
+        if relaxation_score == 0.0 and attention_score == 0.0:
+            logger.warning("⚠️ Normalization resulted in 0s, using fallback")
+            # Use simple min-max normalization based on observed ranges
+            attention_score = min(1.0, max(0.0, attention_score / 5.0))  # Assume max ratio around 5
+            relaxation_score = min(1.0, max(0.0, relaxation_score / 3.0))  # Assume max ratio around 3
+            logger.debug(f"🔄 Fallback - Attention: {attention_score:.4f}, Relaxation: {relaxation_score:.4f}")
         
         # Classify brain state with stability
         brain_state = self._classify_stable_brain_state(attention_score, relaxation_score)
@@ -636,8 +669,8 @@ class MultiPixelblazeController:
         # This creates smooth, continuous transitions
         
         # Get current brainwave data
-        attention = brain_data.get('attention_score', 0.5) if brain_data else self.last_attention
-        relaxation = brain_data.get('relaxation_score', 0.5) if brain_data else self.last_relaxation
+        attention = brain_data.get('attention', 0.5) if brain_data else self.last_attention
+        relaxation = brain_data.get('relaxation', 0.5) if brain_data else self.last_relaxation
         
         # Store for next update
         self.last_attention = attention
@@ -816,6 +849,43 @@ class MindShowDashboard:
                     await websocket.receive_text()
             except WebSocketDisconnect:
                 self.connected_clients.remove(websocket)
+        
+        @self.app.post("/api/update_config")
+        async def update_config(request: dict):
+            """Update configuration parameters in real-time"""
+            try:
+                parameter = request.get("parameter")
+                value = request.get("value")
+                
+                if parameter is None or value is None:
+                    return {"success": False, "error": "Missing parameter or value"}
+                
+                # Validate parameter names
+                valid_params = {
+                    "color_mood_smoothing",
+                    "color_mood_intensity_scale", 
+                    "color_mood_attention_weight",
+                    "color_mood_relaxation_weight",
+                    "attention_min",
+                    "attention_max",
+                    "relaxation_min",
+                    "relaxation_max"
+                }
+                
+                if parameter not in valid_params:
+                    return {"success": False, "error": f"Invalid parameter: {parameter}"}
+                
+                # Update the configuration using the main system
+                if hasattr(self, 'main_system'):
+                    success = self.main_system.update_config(parameter, value)
+                    return {"success": success, "parameter": parameter, "value": value}
+                else:
+                    logger.warning("Main system not available for config update")
+                    return {"success": False, "error": "Main system not available"}
+                
+            except Exception as e:
+                logger.error(f"Error updating config: {e}")
+                return {"success": False, "error": str(e)}
     
     async def broadcast_data(self, data: Dict[str, Any]):
         """Broadcast data to all connected clients"""
@@ -927,6 +997,47 @@ class MindShowDashboard:
                 .warm-mood { color: #ff6b6b; }
                 .cool-mood { color: #4ecdc4; }
                 .neutral-mood { color: #45b7d1; }
+                
+                /* Phase 4b: Slider Controls */
+                .slider-control {
+                    margin: 15px 0;
+                    padding: 10px;
+                    background: rgba(255,255,255,0.05);
+                    border-radius: 8px;
+                    border: 1px solid rgba(255,255,255,0.2);
+                }
+                .slider-control label {
+                    display: block;
+                    margin-bottom: 8px;
+                    font-weight: bold;
+                    color: #fff;
+                }
+                .slider-control input[type="range"] {
+                    width: 100%;
+                    height: 8px;
+                    border-radius: 4px;
+                    background: rgba(255,255,255,0.2);
+                    outline: none;
+                    -webkit-appearance: none;
+                }
+                .slider-control input[type="range"]::-webkit-slider-thumb {
+                    -webkit-appearance: none;
+                    appearance: none;
+                    width: 20px;
+                    height: 20px;
+                    border-radius: 50%;
+                    background: #4ecdc4;
+                    cursor: pointer;
+                    border: 2px solid #fff;
+                }
+                .slider-control input[type="range"]::-moz-range-thumb {
+                    width: 20px;
+                    height: 20px;
+                    border-radius: 50%;
+                    background: #4ecdc4;
+                    cursor: pointer;
+                    border: 2px solid #fff;
+                }
             </style>
         </head>
         <body>
@@ -979,6 +1090,52 @@ class MindShowDashboard:
                     </div>
                 </div>
                 
+                <!-- Phase 4b: Color Mood Control Sliders -->
+                <div class="metrics">
+                    <div class="metric">
+                        <h3>🎛️ Color Mood Controls</h3>
+                        <div class="slider-control">
+                            <label for="smoothing-slider">Smoothing: <span id="smoothing-value">0.3</span></label>
+                            <input type="range" id="smoothing-slider" min="0.0" max="1.0" step="0.1" value="0.3">
+                        </div>
+                        <div class="slider-control">
+                            <label for="intensity-slider">Intensity Scale: <span id="intensity-value">0.5</span></label>
+                            <input type="range" id="intensity-slider" min="0.0" max="1.0" step="0.1" value="0.5">
+                        </div>
+                        <div class="slider-control">
+                            <label for="attention-weight-slider">Attention Weight: <span id="attention-weight-value">0.4</span></label>
+                            <input type="range" id="attention-weight-slider" min="0.0" max="1.0" step="0.1" value="0.4">
+                        </div>
+                        <div class="slider-control">
+                            <label for="relaxation-weight-slider">Relaxation Weight: <span id="relaxation-weight-value">0.4</span></label>
+                            <input type="range" id="relaxation-weight-slider" min="0.0" max="1.0" step="0.1" value="0.4">
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- EEG Processing Controls -->
+                <div class="metrics">
+                    <div class="metric">
+                        <h3>🧠 EEG Processing Controls</h3>
+                        <div class="slider-control">
+                            <label for="attention-min-slider">Attention Min: <span id="attention-min-value">0.0</span></label>
+                            <input type="range" id="attention-min-slider" min="0.0" max="1.0" step="0.05" value="0.0">
+                        </div>
+                        <div class="slider-control">
+                            <label for="attention-max-slider">Attention Max: <span id="attention-max-value">10.0</span></label>
+                            <input type="range" id="attention-max-slider" min="1.0" max="10.0" step="0.5" value="10.0">
+                        </div>
+                        <div class="slider-control">
+                            <label for="relaxation-min-slider">Relaxation Min: <span id="relaxation-min-value">0.0</span></label>
+                            <input type="range" id="relaxation-min-slider" min="0.0" max="1.0" step="0.05" value="0.0">
+                        </div>
+                        <div class="slider-control">
+                            <label for="relaxation-max-slider">Relaxation Max: <span id="relaxation-max-value">5.0</span></label>
+                            <input type="range" id="relaxation-max-slider" min="1.0" max="10.0" step="0.5" value="5.0">
+                        </div>
+                    </div>
+                </div>
+                
                 <div class="devices">
                     <h3>🎆 Pixelblaze Controllers</h3>
                     <div id="devices-list">No devices connected</div>
@@ -987,6 +1144,16 @@ class MindShowDashboard:
                 <div class="chart">
                     <h3>🎨 Real-time Brain State & Color Mood</h3>
                     <div id="brainwave-chart"></div>
+                </div>
+                
+                <!-- Debug Messages -->
+                <div class="metrics">
+                    <div class="metric">
+                        <h3>🐛 Debug Messages</h3>
+                        <div id="debug-messages" style="height: 150px; overflow-y: scroll; background: rgba(0,0,0,0.3); padding: 10px; border-radius: 5px; font-family: monospace; font-size: 12px;">
+                            <div>System started. Ready for slider adjustments...</div>
+                        </div>
+                    </div>
                 </div>
             </div>
             
@@ -1171,6 +1338,70 @@ class MindShowDashboard:
                     
                     Plotly.newPlot('brainwave-chart', traces, layout);
                 }
+                
+                // Phase 4b: Slider Controls
+                function setupSliders() {
+                    const sliders = [
+                        { id: 'smoothing-slider', valueId: 'smoothing-value', param: 'color_mood_smoothing' },
+                        { id: 'intensity-slider', valueId: 'intensity-value', param: 'color_mood_intensity_scale' },
+                        { id: 'attention-weight-slider', valueId: 'attention-weight-value', param: 'color_mood_attention_weight' },
+                        { id: 'relaxation-weight-slider', valueId: 'relaxation-weight-value', param: 'color_mood_relaxation_weight' },
+                        { id: 'attention-min-slider', valueId: 'attention-min-value', param: 'attention_min' },
+                        { id: 'attention-max-slider', valueId: 'attention-max-value', param: 'attention_max' },
+                        { id: 'relaxation-min-slider', valueId: 'relaxation-min-value', param: 'relaxation_min' },
+                        { id: 'relaxation-max-slider', valueId: 'relaxation-max-value', param: 'relaxation_max' }
+                    ];
+                    
+                    sliders.forEach(slider => {
+                        const sliderElement = document.getElementById(slider.id);
+                        const valueElement = document.getElementById(slider.valueId);
+                        
+                        sliderElement.addEventListener('input', (e) => {
+                            const value = parseFloat(e.target.value);
+                            valueElement.textContent = value.toFixed(1);
+                            updateConfig(slider.param, value);
+                        });
+                    });
+                }
+                
+                function updateConfig(param, value) {
+                    fetch('/api/update_config', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            parameter: param,
+                            value: value
+                        })
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            console.log(`✅ Updated ${param} to ${value}`);
+                            showDebugMessage(`✅ Updated ${param} to ${value}`);
+                        } else {
+                            console.error('Failed to update config:', data.error);
+                            showDebugMessage(`❌ Failed to update ${param}: ${data.error}`);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error updating config:', error);
+                        showDebugMessage(`❌ Error updating ${param}: ${error}`);
+                    });
+                }
+                
+                function showDebugMessage(message) {
+                    const debugDiv = document.getElementById('debug-messages');
+                    if (debugDiv) {
+                        const timestamp = new Date().toLocaleTimeString();
+                        debugDiv.innerHTML += `<div>[${timestamp}] ${message}</div>`;
+                        debugDiv.scrollTop = debugDiv.scrollHeight;
+                    }
+                }
+                
+                // Initialize sliders when page loads
+                document.addEventListener('DOMContentLoaded', setupSliders);
             </script>
         </body>
         </html>
@@ -1192,6 +1423,9 @@ class MindShowIntegratedSystem:
         self.pixelblaze_controller = MultiPixelblazeController(config)
         self.dashboard = MindShowDashboard()
         
+        # Give dashboard access to main system for config updates
+        self.dashboard.main_system = self
+        
         # Statistics
         self.stats = {
             'start_time': time.time(),
@@ -1199,6 +1433,25 @@ class MindShowIntegratedSystem:
             'led_updates': 0,
             'errors': 0
         }
+    
+    def update_config(self, parameter: str, value: float) -> bool:
+        """Update configuration parameters in real-time"""
+        try:
+            if hasattr(self.config, parameter):
+                setattr(self.config, parameter, value)
+                
+                # Update the pixelblaze controller with new config
+                if hasattr(self.pixelblaze_controller, parameter):
+                    setattr(self.pixelblaze_controller, parameter, value)
+                
+                logger.info(f"✅ Updated config: {parameter} = {value}")
+                return True
+            else:
+                logger.error(f"❌ Invalid config parameter: {parameter}")
+                return False
+        except Exception as e:
+            logger.error(f"❌ Error updating config: {e}")
+            return False
     
     async def start(self):
         """Start the integrated system"""
@@ -1280,9 +1533,9 @@ class MindShowIntegratedSystem:
                     # Enhance brain_data with color mood information
                     enhanced_brain_data = brain_data.copy() if brain_data else {}
                     if brain_data:
-                        # Get color mood info from Pixelblaze controller
-                        attention = brain_data.get('attention_score', 0.5)
-                        relaxation = brain_data.get('relaxation_score', 0.5)
+                        # Get real attention/relaxation values from brain_data
+                        attention = brain_data.get('attention', 0.5)
+                        relaxation = brain_data.get('relaxation', 0.5)
                         engagement_level = (attention + relaxation) / 2
                         
                         # Add Phase 4b metrics
