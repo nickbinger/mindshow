@@ -24,3 +24,4 @@ websocket-client>=1.6.4
 
 # Optional - enhanced logging on Pi
 # systemd-python>=235  # Uncomment for systemd logging on Pi
+
