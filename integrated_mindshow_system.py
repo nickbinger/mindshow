@@ -1872,18 +1872,18 @@ class MindShowIntegratedSystem:
     def get_device_patterns(self, device_ip: str) -> List[Dict[str, str]]:
         """Get available patterns for a specific device"""
         try:
-            # Find the device
-            for device in self.pixelblaze_controller.devices:
-                if device.ip_address == device_ip and device.connected:
-                    # Convert patterns dict to list format
-                    patterns = []
-                    for pattern_id, pattern_name in device.patterns.items():
-                        patterns.append({
-                            "id": pattern_id,
-                            "name": pattern_name
-                        })
-                    logger.info(f"📋 Retrieved {len(patterns)} patterns for device {device_ip}")
-                    return patterns
+            # Find the device in the devices dictionary
+            device = self.pixelblaze_controller.devices.get(device_ip)
+            if device and device.connected:
+                # Convert patterns dict to list format
+                patterns = []
+                for pattern_id, pattern_name in device.patterns.items():
+                    patterns.append({
+                        "id": pattern_id,
+                        "name": pattern_name
+                    })
+                logger.info(f"📋 Retrieved {len(patterns)} patterns for device {device_ip}")
+                return patterns
             
             logger.warning(f"❌ Device {device_ip} not found or not connected")
             return []
@@ -1895,19 +1895,19 @@ class MindShowIntegratedSystem:
     def switch_device_pattern(self, device_ip: str, pattern_id: str) -> Tuple[bool, str]:
         """Switch to a specific pattern on a device"""
         try:
-            # Find the device
-            for device in self.pixelblaze_controller.devices:
-                if device.ip_address == device_ip and device.connected:
-                    # Find the pattern name
-                    pattern_name = device.patterns.get(pattern_id, "Unknown")
-                    
-                    # Switch the pattern
-                    asyncio.create_task(self.pixelblaze_controller._update_device(
-                        device, pattern_name, {}
-                    ))
-                    
-                    logger.info(f"🎭 Switched device {device_ip} to pattern: {pattern_name}")
-                    return True, pattern_name
+            # Find the device in the devices dictionary
+            device = self.pixelblaze_controller.devices.get(device_ip)
+            if device and device.connected:
+                # Find the pattern name
+                pattern_name = device.patterns.get(pattern_id, "Unknown")
+                
+                # Switch the pattern
+                asyncio.create_task(self.pixelblaze_controller._update_device(
+                    device, pattern_name, {}
+                ))
+                
+                logger.info(f"🎭 Switched device {device_ip} to pattern: {pattern_name}")
+                return True, pattern_name
             
             logger.warning(f"❌ Device {device_ip} not found or not connected")
             return False, f"Device {device_ip} not found or not connected"
