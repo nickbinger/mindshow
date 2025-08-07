@@ -84,6 +84,12 @@ class MindShowConfig:
     web_port: int = 8000
     log_level: str = "INFO"
     pi_mode: bool = False  # Enable Pi optimizations
+    
+    # Phase 4b: Continuous Color Mood Configuration
+    color_mood_smoothing: float = 0.3  # Exponential moving average factor (0-1)
+    color_mood_intensity_scale: float = 0.5  # Base intensity for color shifts
+    color_mood_attention_weight: float = 0.4  # How much attention affects warm shift
+    color_mood_relaxation_weight: float = 0.4  # How much relaxation affects cool shift
 
 # =============================================================================
 # EEG PROCESSING
@@ -477,6 +483,16 @@ class MultiPixelblazeController:
         self.pattern_sync_enabled = True
         self.last_brain_state = "neutral"
         
+        # Continuous color mood mapping parameters
+        self.color_mood_smoothing = config.color_mood_smoothing
+        self.previous_color_mood = 0.5  # Initialize to neutral
+        self.color_mood_history = []  # For advanced smoothing if needed
+        self.last_attention = 0.5
+        self.last_relaxation = 0.5
+        self.attention_weight = config.color_mood_attention_weight
+        self.relaxation_weight = config.color_mood_relaxation_weight
+        self.intensity_scale = config.color_mood_intensity_scale
+        
         # Brain state to LED mappings (research-based)
         # Phase 4b: Perceptual color mood integration
         self.state_mappings = {
@@ -614,79 +630,124 @@ class MultiPixelblazeController:
             logger.error(f"Failed to load state from {device.name}: {e}")
     
     async def update_from_brain_state(self, brain_state: str, brain_data: Dict[str, Any]):
-        """Update all devices based on brain state"""
-        if brain_state == self.last_brain_state:
-            return  # No change needed
+        """Update all devices based on brain state with continuous color mood mapping"""
         
-        logger.info(f"🎨 Updating LEDs for brain state: {brain_state}")
-        self.last_brain_state = brain_state
+        # Always update color mood, even if brain state hasn't changed
+        # This creates smooth, continuous transitions
         
-        # Get mapping for this brain state
+        # Get current brainwave data
+        attention = brain_data.get('attention_score', 0.5) if brain_data else self.last_attention
+        relaxation = brain_data.get('relaxation_score', 0.5) if brain_data else self.last_relaxation
+        
+        # Store for next update
+        self.last_attention = attention
+        self.last_relaxation = relaxation
+        
+        # === CONTINUOUS COLOR MOOD CALCULATION ===
+        
+        # Enhanced mapping with physiological response curve
+        # Attention contribution: higher attention → warmer (lower values)
+        attention_contribution = (attention - 0.5) * -self.attention_weight
+        
+        # Relaxation contribution: higher relaxation → cooler (higher values)  
+        relaxation_contribution = (relaxation - 0.5) * self.relaxation_weight
+        
+        # Calculate engagement level (how engaged overall)
+        engagement_level = (attention + relaxation) / 2
+        
+        # Dynamic intensity scaling based on engagement
+        # Low engagement = less color shift, high engagement = more dramatic shifts
+        intensity = self.intensity_scale + engagement_level * (1.0 - self.intensity_scale)
+        
+        # Base color mood calculation
+        raw_color_mood = 0.5 + (attention_contribution + relaxation_contribution) * intensity
+        
+        # Clamp to valid range
+        raw_color_mood = max(0.0, min(1.0, raw_color_mood))
+        
+        # Apply S-curve easing for perceptual smoothness
+        if raw_color_mood < 0.5:
+            eased_color_mood = 0.5 * pow(raw_color_mood * 2, 2)
+        else:
+            eased_color_mood = 1.0 - 0.5 * pow((1.0 - raw_color_mood) * 2, 2)
+        
+        # === TEMPORAL SMOOTHING ===
+        # Exponential moving average to reduce jitter
+        smoothed_color_mood = (self.color_mood_smoothing * eased_color_mood + 
+                              (1 - self.color_mood_smoothing) * self.previous_color_mood)
+        
+        # Update history
+        self.previous_color_mood = smoothed_color_mood
+        self.color_mood_history.append(smoothed_color_mood)
+        if len(self.color_mood_history) > 30:  # Keep last 30 values
+            self.color_mood_history.pop(0)
+        
+        # Round for transmission
+        final_color_mood = round(smoothed_color_mood, 3)
+        
+        # Check if brain state changed for pattern switching
+        state_changed = brain_state != self.last_brain_state
+        
+        if state_changed:
+            logger.info(f"🎨 Brain state changed: {self.last_brain_state} → {brain_state}")
+            self.last_brain_state = brain_state
+        
+        # Get mapping for current brain state
         mapping = self.state_mappings.get(brain_state, self.state_mappings['neutral'])
-        target_pattern = mapping['pattern_name']
+        target_pattern = mapping['pattern_name'] if state_changed else None
         target_variables = mapping['variables'].copy()  # Copy to avoid modifying defaults
         
-        # Phase 4b: Calculate dynamic color mood bias based on brainwave data
-        if brain_data:
-            attention = brain_data.get('attention_score', 0.5)
-            relaxation = brain_data.get('relaxation_score', 0.5)
-            
-            # Dynamic color mood calculation:
-            # High attention -> warm bias (lower values)
-            # High relaxation -> cool bias (higher values)
-            # Balanced -> neutral (0.5)
-            
-            # Use weighted average with non-linear mapping for perceptual smoothness
-            # Attention pulls toward warm (0.0), relaxation pulls toward cool (1.0)
-            color_mood = 0.5 - (attention - 0.5) * 0.6 + (relaxation - 0.5) * 0.6
-            
-            # Clamp to valid range [0.0, 1.0]
-            color_mood = max(0.0, min(1.0, color_mood))
-            
-            # Apply easing curve for more natural perception (S-curve)
-            # This makes the middle range more stable and extremes more pronounced
-            if color_mood < 0.5:
-                color_mood = 0.5 * pow(color_mood * 2, 2)
-            else:
-                color_mood = 1.0 - 0.5 * pow((1.0 - color_mood) * 2, 2)
-            
-            target_variables['colorMoodBias'] = round(color_mood, 3)
-            logger.debug(f"🎨 Color mood bias: {target_variables['colorMoodBias']:.3f} (attention: {attention:.2f}, relaxation: {relaxation:.2f})")
+        # Always update color mood bias
+        target_variables['colorMoodBias'] = final_color_mood
+        
+        # Log color mood info with emoji indicators
+        mood_emoji = "🔥" if final_color_mood < 0.3 else "❄️" if final_color_mood > 0.7 else "🌈"
+        logger.debug(f"{mood_emoji} Color mood: {final_color_mood:.3f} (raw: {raw_color_mood:.3f}, "
+                    f"attention: {attention:.2f}, relaxation: {relaxation:.2f}, "
+                    f"engagement: {engagement_level:.2f})")
         
         # Update all connected devices
         update_tasks = []
         for device in self.devices.values():
             if device.connected:
-                task = self._update_device(device, target_pattern, target_variables)
+                # Only switch patterns if state changed
+                pattern_to_set = target_pattern if state_changed else None
+                task = self._update_device_continuous(device, pattern_to_set, target_variables)
                 update_tasks.append(task)
         
         # Execute updates in parallel
         if update_tasks:
             await asyncio.gather(*update_tasks, return_exceptions=True)
     
-    async def _update_device(self, device: PixelblazeDevice, pattern_name: str, variables: Dict[str, float]):
-        """Update a single device"""
+    async def _update_device_continuous(self, device: PixelblazeDevice, pattern_name: Optional[str], variables: Dict[str, float]):
+        """Update a single device with continuous color mood support"""
         try:
-            # Find pattern ID by name (case-insensitive search)
-            pattern_id = None
-            for pid, pname in device.patterns.items():
-                if pattern_name.lower() in pname.lower():
-                    pattern_id = pid
-                    break
+            # Only switch pattern if specified (state change)
+            if pattern_name:
+                # Find pattern ID by name (case-insensitive search)
+                pattern_id = None
+                for pid, pname in device.patterns.items():
+                    if pattern_name.lower() in pname.lower():
+                        pattern_id = pid
+                        break
+                
+                # Switch pattern if found
+                if pattern_id:
+                    device.websocket.send(json.dumps({"activeProgramId": pattern_id}))
+                    device.active_pattern = pattern_id
+                    logger.debug(f"📝 Set pattern on {device.name}: {pattern_name} (ID: {pattern_id})")
             
-            # Switch pattern if found
-            if pattern_id:
-                device.websocket.send(json.dumps({"activeProgramId": pattern_id}))
-                device.active_pattern = pattern_id
-                logger.debug(f"📝 Set pattern on {device.name}: {pattern_name} (ID: {pattern_id})")
-            
-            # Update variables
+            # Always update variables (including colorMoodBias)
             device.websocket.send(json.dumps({"setVars": variables}))
             device.variables.update(variables)
             
         except Exception as e:
             logger.error(f"Failed to update {device.name}: {e}")
             device.connected = False
+    
+    async def _update_device(self, device: PixelblazeDevice, pattern_name: str, variables: Dict[str, float]):
+        """Update a single device (legacy method for compatibility)"""
+        await self._update_device_continuous(device, pattern_name, variables)
     
     def get_status(self) -> Dict[str, Any]:
         """Get status of all devices"""
