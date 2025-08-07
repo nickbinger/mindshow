@@ -46,6 +46,7 @@
 - **[research_thresholds.py](src/eeg/research_thresholds.py)** - Brainwave threshold research
 - **[debug_*.py](tests/debug_*.py)** - Debugging and testing tools
 - **[test_*.py](tests/test_*.py)** - Component testing
+- **[phase4b_pixelblaze_color_mood_slider.md](deep_research/phase4b_pixelblaze_color_mood_slider.md)** - Perceptual color mood slider implementation
 
 ### **📖 Guides & Documentation**
 - **[PIXELBLAZE_CONTROL_GUIDE.md](docs/PIXELBLAZE_CONTROL_GUIDE.md)** - How to control Pixelblaze

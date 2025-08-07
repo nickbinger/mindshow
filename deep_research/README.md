@@ -21,7 +21,14 @@ The research documents cover various aspects of:
 
 ## 📋 Document List
 
-*Documents will be added as they are processed and converted to markdown*
+### **Phase 4b: Perceptual Color Mood Slider**
+- **[phase4b_pixelblaze_color_mood_slider.md](phase4b_pixelblaze_color_mood_slider.md)** - Complete implementation guide for perceptual color biasing
+  - 3 implementation approaches (HSV, RGB, Palette-based)
+  - Real-time `colorMoodBias` slider integration
+  - Best practices and code examples
+  - Ready for Phase 4 implementation
+
+*Additional documents will be added as they are processed and converted to markdown*
 
 ---
 
