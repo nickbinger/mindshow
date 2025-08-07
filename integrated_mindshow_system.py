@@ -107,7 +107,7 @@ class MuseLSLProcessor:
             
         try:
             logger.info("Looking for Muse LSL streams...")
-            streams = pylsl.resolve_stream('type', 'EEG', timeout=5)
+            streams = pylsl.resolve_streams()
             
             if not streams:
                 logger.error("No Muse LSL streams found")
@@ -1008,8 +1008,20 @@ class MindShowIntegratedSystem:
                     self.stats['led_updates'] += 1
                     
                     # Broadcast to dashboard
+                    # Fix NaN values for JSON compatibility
+                    def fix_nan_values(obj):
+                        import math
+                        if isinstance(obj, dict):
+                            return {k: fix_nan_values(v) for k, v in obj.items()}
+                        elif isinstance(obj, list):
+                            return [fix_nan_values(v) for v in obj]
+                        elif isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj)):
+                            return None
+                        else:
+                            return obj
+                    
                     dashboard_data = {
-                        'brain_data': brain_data,
+                        'brain_data': fix_nan_values(brain_data),
                         'pixelblaze_status': self.pixelblaze_controller.get_status(),
                         'stats': self.stats
                     }

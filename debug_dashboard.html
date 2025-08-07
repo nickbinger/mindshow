@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>🧠 MindShow Debug Dashboard</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            margin: 20px; 
+            background: #1a1a1a;
+            color: white;
+        }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .metric { 
+            background: #333; 
+            padding: 15px; 
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+        .status { font-weight: bold; }
+        .online { color: #4ecdc4; }
+        .offline { color: #ff6b6b; }
+        #log { 
+            background: #000; 
+            padding: 10px; 
+            height: 300px; 
+            overflow-y: scroll;
+            font-family: monospace;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧠 MindShow Debug Dashboard</h1>
+        
+        <div class="metric">
+            <h3>WebSocket Status</h3>
+            <div id="ws-status" class="status offline">Disconnected</div>
+        </div>
+        
+        <div class="metric">
+            <h3>Brain State</h3>
+            <div id="brain-state">--</div>
+        </div>
+        
+        <div class="metric">
+            <h3>Attention</h3>
+            <div id="attention">0.000</div>
+        </div>
+        
+        <div class="metric">
+            <h3>Relaxation</h3>
+            <div id="relaxation">0.000</div>
+        </div>
+        
+        <div class="metric">
+            <h3>Connected Devices</h3>
+            <div id="device-count">0/0</div>
+        </div>
+        
+        <div class="metric">
+            <h3>Raw Data Log</h3>
+            <div id="log"></div>
+        </div>
+    </div>
+    
+    <script>
+        const ws = new WebSocket('ws://localhost:8000/ws');
+        const log = document.getElementById('log');
+        
+        function addLog(message) {
+            const timestamp = new Date().toLocaleTimeString();
+            log.innerHTML += `[${timestamp}] ${message}\n`;
+            log.scrollTop = log.scrollHeight;
+        }
+        
+        ws.onopen = () => {
+            document.getElementById('ws-status').textContent = 'Connected';
+            document.getElementById('ws-status').className = 'status online';
+            addLog('✅ WebSocket connected');
+        };
+        
+        ws.onclose = () => {
+            document.getElementById('ws-status').textContent = 'Disconnected';
+            document.getElementById('ws-status').className = 'status offline';
+            addLog('❌ WebSocket disconnected');
+        };
+        
+        ws.onerror = (error) => {
+            addLog(`❌ WebSocket error: ${error}`);
+        };
+        
+        ws.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                addLog(`📊 Received data: ${JSON.stringify(data, null, 2)}`);
+                
+                if (data.brain_data) {
+                    document.getElementById('brain-state').textContent = data.brain_data.brain_state.toUpperCase();
+                    document.getElementById('attention').textContent = data.brain_data.attention.toFixed(3);
+                    document.getElementById('relaxation').textContent = data.brain_data.relaxation.toFixed(3);
+                }
+                
+                if (data.pixelblaze_status) {
+                    document.getElementById('device-count').textContent = 
+                        `${data.pixelblaze_status.connected_devices}/${data.pixelblaze_status.total_devices}`;
+                }
+                
+            } catch (error) {
+                addLog(`❌ Error parsing data: ${error}`);
+            }
+        };
+        
+        addLog('🚀 Debug dashboard started');
+    </script>
+</body>
+</html>
