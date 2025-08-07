@@ -1458,9 +1458,10 @@ class MindShowIntegratedSystem:
         logger.info("🚀 Starting MindShow Integrated System")
         
         # Connect EEG
-        if not self.eeg_processor.connect():
-            logger.error("❌ Failed to connect to EEG source")
-            return False
+        eeg_connected = self.eeg_processor.connect()
+        if not eeg_connected:
+            logger.warning("⚠️  No EEG source available - starting in demo mode")
+            logger.info("💡 Connect your Muse headband and restart to enable brainwave control")
         
         # Discover and connect Pixelblaze devices
         connected_devices = await self.pixelblaze_controller.discover_and_connect()
@@ -1475,6 +1476,11 @@ class MindShowIntegratedSystem:
         
         self.running = True
         logger.info("✅ MindShow Integrated System started successfully!")
+        
+        if eeg_connected:
+            logger.info("🧠 Brainwave control enabled")
+        else:
+            logger.info("🎭 Demo mode - dashboard available for testing")
         
         try:
             await asyncio.gather(dashboard_task, processing_task)
@@ -1508,6 +1514,18 @@ class MindShowIntegratedSystem:
                 # Get brain state
                 brain_data = self.eeg_processor.get_brain_state()
                 
+                # Fix NaN values for JSON compatibility
+                def fix_nan_values(obj):
+                    import math
+                    if isinstance(obj, dict):
+                        return {k: fix_nan_values(v) for k, v in obj.items()}
+                    elif isinstance(obj, list):
+                        return [fix_nan_values(v) for v in obj]
+                    elif isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj)):
+                        return None
+                    else:
+                        return obj
+                
                 if brain_data:
                     self.stats['brain_updates'] += 1
                     
@@ -1516,19 +1534,6 @@ class MindShowIntegratedSystem:
                         brain_data['brain_state'], brain_data
                     )
                     self.stats['led_updates'] += 1
-                    
-                    # Broadcast to dashboard
-                    # Fix NaN values for JSON compatibility
-                    def fix_nan_values(obj):
-                        import math
-                        if isinstance(obj, dict):
-                            return {k: fix_nan_values(v) for k, v in obj.items()}
-                        elif isinstance(obj, list):
-                            return [fix_nan_values(v) for v in obj]
-                        elif isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj)):
-                            return None
-                        else:
-                            return obj
                     
                     # Enhance brain_data with color mood information
                     enhanced_brain_data = brain_data.copy() if brain_data else {}
@@ -1558,6 +1563,25 @@ class MindShowIntegratedSystem:
                     # Log periodic status
                     if self.stats['brain_updates'] % 100 == 0:
                         self._log_status()
+                else:
+                    # No EEG data available - send demo data
+                    demo_brain_data = {
+                        'brain_state': 'neutral',
+                        'attention': 0.5,
+                        'relaxation': 0.5,
+                        'engagement_level': 0.5,
+                        'color_mood': 0.5,
+                        'color_mood_smoothing': self.pixelblaze_controller.color_mood_smoothing,
+                        'color_mood_history_length': len(self.pixelblaze_controller.color_mood_history),
+                        'demo_mode': True
+                    }
+                    
+                    dashboard_data = {
+                        'brain_data': fix_nan_values(demo_brain_data),
+                        'pixelblaze_status': self.pixelblaze_controller.get_status(),
+                        'stats': self.stats
+                    }
+                    await self.dashboard.broadcast_data(dashboard_data)
                 
                 # Sleep for remaining time
                 elapsed = time.time() - start_time
@@ -1609,10 +1633,31 @@ async def main():
     
     # Create and start system
     system = MindShowIntegratedSystem(config)
-    await system.start()
+    
+    # Set up signal handlers for clean shutdown
+    def signal_handler(signum, frame):
+        logger.info(f"🔄 Received signal {signum}, initiating shutdown...")
+        asyncio.create_task(system.shutdown())
+    
+    import signal
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+    
+    try:
+        await system.start()
+    except KeyboardInterrupt:
+        logger.info("🔄 Keyboard interrupt received, shutting down...")
+        await system.shutdown()
+    except Exception as e:
+        logger.error(f"❌ Unexpected error: {e}")
+        await system.shutdown()
+        raise
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
         logger.info("👋 Goodbye!")
+    except Exception as e:
+        logger.error(f"❌ System failed to start: {e}")
+        sys.exit(1)
