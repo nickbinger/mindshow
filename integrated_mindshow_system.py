@@ -294,6 +294,11 @@ class IntegratedEEGProcessor:
         self.state_confidence = 0
         self.last_state_change = time.time()
         
+        # Dynamic range tracking for adaptive normalization
+        self.attention_range_history = []
+        self.relaxation_range_history = []
+        self.max_history_size = 100
+        
     def connect(self) -> bool:
         """Connect to EEG source with primary/fallback logic"""
         logger.info("🧠 Connecting to EEG source...")
@@ -331,20 +336,23 @@ class IntegratedEEGProcessor:
         if not raw_data:
             return None
         
-        # Calculate attention and relaxation scores
+        # Calculate attention and relaxation scores with robust fallbacks
         band_powers = raw_data['band_powers']
-        attention_score = band_powers['beta'] / (band_powers['alpha'] + 1e-10)
         
-        # Handle missing Theta band (common issue with Muse)
-        if np.isnan(band_powers['theta']) or band_powers['theta'] == 0:
-            # Use Alpha/Delta as fallback for relaxation
-            relaxation_score = band_powers['alpha'] / (band_powers['delta'] + 1e-10)
-            logger.debug(f"🔄 Using Alpha/Delta fallback for relaxation (Theta was nan)")
+        # Debug: Log all band powers
+        logger.debug(f"🧠 Raw EEG - Alpha: {band_powers['alpha']:.4f}, Beta: {band_powers['beta']:.4f}, Theta: {band_powers['theta']:.4f}, Delta: {band_powers['delta']:.4f}")
+        
+        # Attention calculation (Beta/Alpha ratio)
+        if band_powers['alpha'] > 0:
+            attention_score = band_powers['beta'] / band_powers['alpha']
         else:
-            relaxation_score = band_powers['alpha'] / (band_powers['theta'] + 1e-10)
+            attention_score = 0.5  # Neutral if no alpha activity
+            logger.debug("🔄 No alpha activity, using neutral attention")
         
-        # Debug: Log raw values
-        logger.debug(f"🧠 Raw EEG - Alpha: {band_powers['alpha']:.4f}, Beta: {band_powers['beta']:.4f}, Theta: {band_powers['theta']:.4f}")
+        # Relaxation calculation with multiple fallback methods
+        relaxation_score = self._calculate_relaxation_robust(band_powers)
+        
+        # Debug: Log raw ratios
         logger.debug(f"🧠 Raw Ratios - Attention: {attention_score:.4f}, Relaxation: {relaxation_score:.4f}")
         
         # Normalize scores using configurable parameters
@@ -359,13 +367,16 @@ class IntegratedEEGProcessor:
         logger.debug(f"🎛️ Config - Att Min: {self.config.attention_min}, Att Max: {self.config.attention_max}")
         logger.debug(f"🎛️ Config - Relax Min: {self.config.relaxation_min}, Relax Max: {self.config.relaxation_max}")
         
-        # Fallback: If normalization results in 0, try a simpler approach
-        if relaxation_score == 0.0 and attention_score == 0.0:
-            logger.warning("⚠️ Normalization resulted in 0s, using fallback")
-            # Use simple min-max normalization based on observed ranges
-            attention_score = min(1.0, max(0.0, attention_score / 5.0))  # Assume max ratio around 5
-            relaxation_score = min(1.0, max(0.0, relaxation_score / 3.0))  # Assume max ratio around 3
-            logger.debug(f"🔄 Fallback - Attention: {attention_score:.4f}, Relaxation: {relaxation_score:.4f}")
+        # Final fallback: If normalization results in 0, use dynamic scaling
+        if relaxation_score == 0.0:
+            logger.warning("⚠️ Relaxation normalized to 0, using dynamic scaling")
+            relaxation_score = self._dynamic_relaxation_scaling(band_powers)
+            logger.debug(f"🔄 Dynamic scaling - Relaxation: {relaxation_score:.4f}")
+        
+        if attention_score == 0.0:
+            logger.warning("⚠️ Attention normalized to 0, using dynamic scaling")
+            attention_score = self._dynamic_attention_scaling(band_powers)
+            logger.debug(f"🔄 Dynamic scaling - Attention: {attention_score:.4f}")
         
         # Classify brain state with stability
         brain_state = self._classify_stable_brain_state(attention_score, relaxation_score)
@@ -409,6 +420,85 @@ class IntegratedEEGProcessor:
             self.state_confidence = 0
         
         return self.last_brain_state
+    
+    def _calculate_relaxation_robust(self, band_powers: Dict[str, float]) -> float:
+        """Calculate relaxation with multiple fallback methods"""
+        
+        # Method 1: Alpha/Theta ratio (primary)
+        if not np.isnan(band_powers['theta']) and band_powers['theta'] > 0:
+            relaxation_score = band_powers['alpha'] / band_powers['theta']
+            logger.debug(f"🔄 Method 1 (Alpha/Theta): {relaxation_score:.4f}")
+            return relaxation_score
+        
+        # Method 2: Alpha/Delta ratio (fallback 1)
+        if not np.isnan(band_powers['delta']) and band_powers['delta'] > 0:
+            relaxation_score = band_powers['alpha'] / band_powers['delta']
+            logger.debug(f"🔄 Method 2 (Alpha/Delta): {relaxation_score:.4f}")
+            return relaxation_score
+        
+        # Method 3: Alpha power only (fallback 2)
+        if not np.isnan(band_powers['alpha']) and band_powers['alpha'] > 0:
+            # Scale alpha power to reasonable range (0-5)
+            relaxation_score = min(5.0, band_powers['alpha'] / 10.0)
+            logger.debug(f"🔄 Method 3 (Alpha power): {relaxation_score:.4f}")
+            return relaxation_score
+        
+        # Method 4: Relative alpha dominance (fallback 3)
+        total_power = sum([v for v in band_powers.values() if not np.isnan(v) and v > 0])
+        if total_power > 0 and not np.isnan(band_powers['alpha']):
+            relaxation_score = band_powers['alpha'] / total_power * 5.0  # Scale to 0-5 range
+            logger.debug(f"🔄 Method 4 (Alpha dominance): {relaxation_score:.4f}")
+            return relaxation_score
+        
+        # Method 5: Last resort - neutral value
+        logger.warning("⚠️ All relaxation calculation methods failed, using neutral value")
+        return 0.5
+    
+    def _dynamic_relaxation_scaling(self, band_powers: Dict[str, float]) -> float:
+        """Dynamic scaling for relaxation when normalization fails"""
+        
+        # Try different scaling approaches based on available data
+        if not np.isnan(band_powers['alpha']) and band_powers['alpha'] > 0:
+            # Scale alpha power directly
+            scaled_relaxation = band_powers['alpha'] / 20.0  # Assume max alpha around 20
+            return min(1.0, max(0.0, scaled_relaxation))
+        
+        elif not np.isnan(band_powers['theta']) and band_powers['theta'] > 0:
+            # Use inverse theta (lower theta = higher relaxation)
+            inverse_theta = 1.0 / (band_powers['theta'] + 0.1)
+            return min(1.0, max(0.0, inverse_theta / 10.0))
+        
+        else:
+            # Use a combination of available bands
+            available_powers = [v for v in band_powers.values() if not np.isnan(v) and v > 0]
+            if available_powers:
+                avg_power = sum(available_powers) / len(available_powers)
+                return min(1.0, max(0.0, avg_power / 10.0))
+            else:
+                return 0.5  # Neutral fallback
+    
+    def _dynamic_attention_scaling(self, band_powers: Dict[str, float]) -> float:
+        """Dynamic scaling for attention when normalization fails"""
+        
+        # Try different scaling approaches based on available data
+        if not np.isnan(band_powers['beta']) and band_powers['beta'] > 0:
+            # Scale beta power directly
+            scaled_attention = band_powers['beta'] / 15.0  # Assume max beta around 15
+            return min(1.0, max(0.0, scaled_attention))
+        
+        elif not np.isnan(band_powers['alpha']) and band_powers['alpha'] > 0:
+            # Use inverse alpha (lower alpha = higher attention)
+            inverse_alpha = 1.0 / (band_powers['alpha'] + 0.1)
+            return min(1.0, max(0.0, inverse_alpha / 10.0))
+        
+        else:
+            # Use a combination of available bands
+            available_powers = [v for v in band_powers.values() if not np.isnan(v) and v > 0]
+            if available_powers:
+                avg_power = sum(available_powers) / len(available_powers)
+                return min(1.0, max(0.0, avg_power / 10.0))
+            else:
+                return 0.5  # Neutral fallback
     
     def disconnect(self):
         """Disconnect from EEG source"""
