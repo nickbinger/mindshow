@@ -2041,6 +2041,7 @@ class MindShowIntegratedSystem:
                     # No EEG data available - send demo data
                     demo_brain_data = {
                         'brain_state': 'neutral',
+                        'source': 'demo',
                         'attention': 0.5,
                         'relaxation': 0.5,
                         'engagement_level': 0.5,
