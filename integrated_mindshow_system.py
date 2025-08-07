@@ -1002,6 +1002,50 @@ class MindShowDashboard:
             except Exception as e:
                 logger.error(f"Error sending manual mood: {e}")
                 return {"success": False, "error": str(e)}
+        
+        @self.app.get("/api/get_patterns")
+        async def get_patterns(device: str):
+            """Get available patterns for a specific device"""
+            try:
+                if not device:
+                    return {"success": False, "error": "Device parameter required"}
+                
+                # Get patterns from main system
+                if hasattr(self, 'main_system'):
+                    patterns = self.main_system.get_device_patterns(device)
+                    return {"success": True, "patterns": patterns}
+                else:
+                    logger.warning("Main system not available for pattern retrieval")
+                    return {"success": False, "error": "Main system not available"}
+                
+            except Exception as e:
+                logger.error(f"Error getting patterns: {e}")
+                return {"success": False, "error": str(e)}
+        
+        @self.app.post("/api/switch_pattern")
+        async def switch_pattern(request: dict):
+            """Switch to a specific pattern on a device"""
+            try:
+                device = request.get("device")
+                pattern = request.get("pattern")
+                
+                if not device or not pattern:
+                    return {"success": False, "error": "Device and pattern parameters required"}
+                
+                # Switch pattern using main system
+                if hasattr(self, 'main_system'):
+                    success, pattern_name = self.main_system.switch_device_pattern(device, pattern)
+                    if success:
+                        return {"success": True, "pattern_name": pattern_name}
+                    else:
+                        return {"success": False, "error": pattern_name}  # pattern_name contains error message
+                else:
+                    logger.warning("Main system not available for pattern switching")
+                    return {"success": False, "error": "Main system not available"}
+                
+            except Exception as e:
+                logger.error(f"Error switching pattern: {e}")
+                return {"success": False, "error": str(e)}
     
     async def broadcast_data(self, data: Dict[str, Any]):
         """Broadcast data to all connected clients"""
@@ -1274,6 +1318,35 @@ class MindShowDashboard:
                     </div>
                 </div>
                 
+                <!-- Pattern Selector -->
+                <div class="metrics">
+                    <div class="metric">
+                        <h3>🎭 Pattern Selector</h3>
+                        <p style="font-size: 12px; opacity: 0.8; margin-bottom: 15px;">
+                            Switch between available Pixelblaze patterns
+                        </p>
+                        <div style="margin-bottom: 15px;">
+                            <label for="device-selector">Device:</label>
+                            <select id="device-selector" style="margin-left: 10px; padding: 5px; border-radius: 3px; background: rgba(255,255,255,0.1); color: white; border: 1px solid rgba(255,255,255,0.3);">
+                                <option value="">Select a device...</option>
+                            </select>
+                        </div>
+                        <div style="margin-bottom: 15px;">
+                            <label for="pattern-selector">Pattern:</label>
+                            <select id="pattern-selector" style="margin-left: 10px; padding: 5px; border-radius: 3px; background: rgba(255,255,255,0.1); color: white; border: 1px solid rgba(255,255,255,0.3); width: 200px;">
+                                <option value="">Select a pattern...</option>
+                            </select>
+                        </div>
+                        <button id="switch-pattern" style="padding: 8px 16px; background: #ff6b6b; border: none; border-radius: 5px; color: white; cursor: pointer; margin-right: 10px;">
+                            🎭 Switch Pattern
+                        </button>
+                        <button id="refresh-patterns" style="padding: 8px 16px; background: #45b7d1; border: none; border-radius: 5px; color: white; cursor: pointer;">
+                            🔄 Refresh
+                        </button>
+                        <div id="pattern-status" style="margin-top: 10px; font-size: 12px; opacity: 0.8;"></div>
+                    </div>
+                </div>
+                
                 <div class="devices">
                     <h3>🎆 Pixelblaze Controllers</h3>
                     <div id="devices-list">No devices connected</div>
@@ -1349,6 +1422,11 @@ class MindShowDashboard:
                                 </div>
                             </div>
                         `).join('');
+                    }
+                    
+                    // Update pattern selector device list
+                    if (window.updateDeviceSelector) {
+                        window.updateDeviceSelector(status.devices);
                     }
                 }
                 
@@ -1598,10 +1676,120 @@ class MindShowDashboard:
                     });
                 }
                 
+                // Pattern Selector
+                function setupPatternSelector() {
+                    const deviceSelector = document.getElementById('device-selector');
+                    const patternSelector = document.getElementById('pattern-selector');
+                    const switchButton = document.getElementById('switch-pattern');
+                    const refreshButton = document.getElementById('refresh-patterns');
+                    const statusDiv = document.getElementById('pattern-status');
+                    
+                    // Populate device selector when devices are available
+                    function updateDeviceSelector(devices) {
+                        deviceSelector.innerHTML = '<option value="">Select a device...</option>';
+                        devices.forEach(device => {
+                            if (device.connected) {
+                                const option = document.createElement('option');
+                                option.value = device.ip;
+                                option.textContent = `${device.name} (${device.ip})`;
+                                deviceSelector.appendChild(option);
+                            }
+                        });
+                    }
+                    
+                    // Populate pattern selector when device is selected
+                    deviceSelector.addEventListener('change', () => {
+                        const selectedDevice = deviceSelector.value;
+                        patternSelector.innerHTML = '<option value="">Select a pattern...</option>';
+                        
+                        if (selectedDevice) {
+                            // Find the selected device and populate patterns
+                            fetch('/api/get_patterns?device=' + selectedDevice)
+                                .then(response => response.json())
+                                .then(data => {
+                                    if (data.success && data.patterns) {
+                                        data.patterns.forEach(pattern => {
+                                            const option = document.createElement('option');
+                                            option.value = pattern.id;
+                                            option.textContent = pattern.name;
+                                            patternSelector.appendChild(option);
+                                        });
+                                        statusDiv.textContent = `✅ Loaded ${data.patterns.length} patterns`;
+                                        statusDiv.style.color = '#4ecdc4';
+                                    } else {
+                                        statusDiv.textContent = `❌ Failed to load patterns: ${data.error}`;
+                                        statusDiv.style.color = '#ff6b6b';
+                                    }
+                                })
+                                .catch(error => {
+                                    statusDiv.textContent = `❌ Error loading patterns: ${error}`;
+                                    statusDiv.style.color = '#ff6b6b';
+                                });
+                        }
+                    });
+                    
+                    // Switch pattern button
+                    switchButton.addEventListener('click', () => {
+                        const selectedDevice = deviceSelector.value;
+                        const selectedPattern = patternSelector.value;
+                        
+                        if (!selectedDevice || !selectedPattern) {
+                            statusDiv.textContent = '❌ Please select both device and pattern';
+                            statusDiv.style.color = '#ff6b6b';
+                            return;
+                        }
+                        
+                        statusDiv.textContent = '🔄 Switching pattern...';
+                        
+                        fetch('/api/switch_pattern', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({
+                                device: selectedDevice,
+                                pattern: selectedPattern
+                            })
+                        })
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.success) {
+                                statusDiv.textContent = `✅ Switched to: ${data.pattern_name}`;
+                                statusDiv.style.color = '#4ecdc4';
+                                showDebugMessage(`✅ Pattern switched: ${data.pattern_name} on ${selectedDevice}`);
+                            } else {
+                                statusDiv.textContent = `❌ Failed: ${data.error}`;
+                                statusDiv.style.color = '#ff6b6b';
+                                showDebugMessage(`❌ Pattern switch failed: ${data.error}`);
+                            }
+                        })
+                        .catch(error => {
+                            statusDiv.textContent = `❌ Error: ${error}`;
+                            statusDiv.style.color = '#ff6b6b';
+                            showDebugMessage(`❌ Pattern switch error: ${error}`);
+                        });
+                    });
+                    
+                    // Refresh patterns button
+                    refreshButton.addEventListener('click', () => {
+                        statusDiv.textContent = '🔄 Refreshing patterns...';
+                        // Trigger a device status update to refresh the list
+                        if (window.ws && window.ws.readyState === WebSocket.OPEN) {
+                            window.ws.send(JSON.stringify({action: 'refresh_patterns'}));
+                        }
+                        statusDiv.textContent = '✅ Refreshed pattern list';
+                        statusDiv.style.color = '#4ecdc4';
+                    });
+                    
+                    // Update device selector when devices are updated
+                    window.updateDeviceSelector = updateDeviceSelector;
+                }
+                
                 // Initialize sliders when page loads
                 document.addEventListener('DOMContentLoaded', () => {
                     setupSliders();
                     setupManualMoodControl();
+                    setupPatternSelector();
                 });
             </script>
         </body>
@@ -1680,6 +1868,53 @@ class MindShowIntegratedSystem:
         except Exception as e:
             logger.error(f"❌ Failed to send manual mood: {e}")
             return False
+    
+    def get_device_patterns(self, device_ip: str) -> List[Dict[str, str]]:
+        """Get available patterns for a specific device"""
+        try:
+            # Find the device
+            for device in self.pixelblaze_controller.devices:
+                if device.ip_address == device_ip and device.connected:
+                    # Convert patterns dict to list format
+                    patterns = []
+                    for pattern_id, pattern_name in device.patterns.items():
+                        patterns.append({
+                            "id": pattern_id,
+                            "name": pattern_name
+                        })
+                    logger.info(f"📋 Retrieved {len(patterns)} patterns for device {device_ip}")
+                    return patterns
+            
+            logger.warning(f"❌ Device {device_ip} not found or not connected")
+            return []
+            
+        except Exception as e:
+            logger.error(f"❌ Error getting patterns for {device_ip}: {e}")
+            return []
+    
+    def switch_device_pattern(self, device_ip: str, pattern_id: str) -> Tuple[bool, str]:
+        """Switch to a specific pattern on a device"""
+        try:
+            # Find the device
+            for device in self.pixelblaze_controller.devices:
+                if device.ip_address == device_ip and device.connected:
+                    # Find the pattern name
+                    pattern_name = device.patterns.get(pattern_id, "Unknown")
+                    
+                    # Switch the pattern
+                    asyncio.create_task(self.pixelblaze_controller._update_device(
+                        device, pattern_name, {}
+                    ))
+                    
+                    logger.info(f"🎭 Switched device {device_ip} to pattern: {pattern_name}")
+                    return True, pattern_name
+            
+            logger.warning(f"❌ Device {device_ip} not found or not connected")
+            return False, f"Device {device_ip} not found or not connected"
+            
+        except Exception as e:
+            logger.error(f"❌ Error switching pattern on {device_ip}: {e}")
+            return False, str(e)
     
     async def start(self):
         """Start the integrated system"""
