@@ -1,0 +1,26 @@
+# MindShow Integrated System Dependencies
+# Phase 2+3 Implementation
+
+# Core web framework and async support
+fastapi>=0.104.1
+uvicorn[standard]>=0.24.0
+websockets>=12.0
+
+# Data processing
+numpy>=1.24.0
+loguru>=0.7.2
+
+# EEG Processing - Primary (MuseLSL)
+pylsl>=1.16.0
+
+# EEG Processing - Fallback (BrainFlow) 
+brainflow>=5.11.0
+
+# Pixelblaze WebSocket control
+websocket-client>=1.6.4
+
+# Optional - for Pi GPIO/hardware integration (Phase 4)
+# RPi.GPIO>=0.7.1  # Uncomment when deploying to Pi
+
+# Optional - enhanced logging on Pi
+# systemd-python>=235  # Uncomment for systemd logging on Pi
