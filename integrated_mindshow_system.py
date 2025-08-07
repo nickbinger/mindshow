@@ -889,13 +889,51 @@ class MindShowDashboard:
                     margin-bottom: 20px;
                     height: 400px;
                 }
+                
+                /* Phase 4b: Color Mood Styles */
+                .color-mood-display { 
+                    border: 2px solid rgba(255,255,255,0.3); 
+                    background: rgba(255,255,255,0.05); 
+                }
+                .color-mood-bar {
+                    height: 20px;
+                    background: linear-gradient(90deg, 
+                        #ff4444 0%,     /* Deep warm */
+                        #ff8844 25%,    /* Warm */
+                        #44ff44 50%,    /* Neutral */
+                        #4488ff 75%,    /* Cool */
+                        #8844ff 100%);  /* Deep cool */
+                    border-radius: 10px;
+                    margin: 10px 0;
+                    position: relative;
+                    border: 1px solid rgba(255,255,255,0.3);
+                }
+                .color-mood-indicator {
+                    position: absolute;
+                    top: -2px;
+                    width: 4px;
+                    height: 24px;
+                    background: white;
+                    border: 2px solid #333;
+                    border-radius: 2px;
+                    box-shadow: 0 0 10px rgba(255,255,255,0.8);
+                    transition: left 0.3s ease;
+                }
+                .color-mood-description {
+                    font-size: 14px;
+                    opacity: 0.8;
+                    margin-top: 5px;
+                }
+                .warm-mood { color: #ff6b6b; }
+                .cool-mood { color: #4ecdc4; }
+                .neutral-mood { color: #45b7d1; }
             </style>
         </head>
         <body>
             <div class="container">
                 <div class="header">
                     <h1>🧠 MindShow Integrated System</h1>
-                    <p>Phase 2+3 Implementation - Multi-Pixelblaze Control</p>
+                    <p>Phase 4b: Continuous Color Mood Mapping - Real-time Brain-to-Light Control</p>
                 </div>
                 
                 <div class="metrics">
@@ -921,13 +959,33 @@ class MindShowDashboard:
                     </div>
                 </div>
                 
+                <!-- Phase 4b: Color Mood Visualization -->
+                <div class="metrics">
+                    <div class="metric color-mood-display">
+                        <h3>🎨 Color Mood</h3>
+                        <div id="color-mood-value" class="metric-value">0.500</div>
+                        <div id="color-mood-bar" class="color-mood-bar">
+                            <div id="color-mood-indicator" class="color-mood-indicator"></div>
+                        </div>
+                        <div id="color-mood-description" class="color-mood-description">Neutral</div>
+                    </div>
+                    <div class="metric">
+                        <h3>🔬 Engagement Level</h3>
+                        <div id="engagement-level" class="metric-value">0.500</div>
+                    </div>
+                    <div class="metric">
+                        <h3>🧠 Mental Activity</h3>
+                        <div id="mental-activity" class="metric-value">--</div>
+                    </div>
+                </div>
+                
                 <div class="devices">
                     <h3>🎆 Pixelblaze Controllers</h3>
                     <div id="devices-list">No devices connected</div>
                 </div>
                 
                 <div class="chart">
-                    <h3>Real-time Brainwave Activity</h3>
+                    <h3>🎨 Real-time Brain State & Color Mood</h3>
                     <div id="brainwave-chart"></div>
                 </div>
             </div>
@@ -959,6 +1017,11 @@ class MindShowDashboard:
                     document.getElementById('attention').textContent = brain.attention.toFixed(3);
                     document.getElementById('relaxation').textContent = brain.relaxation.toFixed(3);
                     
+                    // Update Phase 4b color mood visualization
+                    if (brain.color_mood !== undefined) {
+                        updateColorMood(brain.color_mood, brain.engagement_level, brain.attention, brain.relaxation);
+                    }
+                    
                     updateChart(brain);
                 }
                 
@@ -984,15 +1047,61 @@ class MindShowDashboard:
                     }
                 }
                 
+                function updateColorMood(colorMood, engagementLevel, attention, relaxation) {
+                    // Update numerical value
+                    document.getElementById('color-mood-value').textContent = colorMood.toFixed(3);
+                    document.getElementById('engagement-level').textContent = engagementLevel.toFixed(3);
+                    
+                    // Update position of indicator on color bar
+                    const indicator = document.getElementById('color-mood-indicator');
+                    const position = colorMood * 100; // Convert to percentage
+                    indicator.style.left = `calc(${position}% - 2px)`;
+                    
+                    // Update description and styling
+                    const description = document.getElementById('color-mood-description');
+                    const moodValue = document.getElementById('color-mood-value');
+                    
+                    if (colorMood < 0.3) {
+                        description.textContent = '🔥 Warm (Engaged/Focus)';
+                        description.className = 'color-mood-description warm-mood';
+                        moodValue.className = 'metric-value warm-mood';
+                    } else if (colorMood > 0.7) {
+                        description.textContent = '❄️ Cool (Relaxed/Calm)';
+                        description.className = 'color-mood-description cool-mood';
+                        moodValue.className = 'metric-value cool-mood';
+                    } else {
+                        description.textContent = '🌈 Neutral (Balanced)';
+                        description.className = 'color-mood-description neutral-mood';
+                        moodValue.className = 'metric-value neutral-mood';
+                    }
+                    
+                    // Update mental activity indicator
+                    const mentalActivity = (attention + relaxation) / 2;
+                    const activityElement = document.getElementById('mental-activity');
+                    if (mentalActivity > 0.75) {
+                        activityElement.textContent = '🔥 High';
+                        activityElement.className = 'metric-value warm-mood';
+                    } else if (mentalActivity > 0.5) {
+                        activityElement.textContent = '⚡ Medium';
+                        activityElement.className = 'metric-value neutral-mood';
+                    } else {
+                        activityElement.textContent = '😴 Low';
+                        activityElement.className = 'metric-value cool-mood';
+                    }
+                }
+                
                 function updateChart(brain) {
                     const timestamp = new Date();
                     brainwaveData.push({
                         time: timestamp,
-                        delta: brain.band_powers.delta,
-                        theta: brain.band_powers.theta,
-                        alpha: brain.band_powers.alpha,
-                        beta: brain.band_powers.beta,
-                        gamma: brain.band_powers.gamma
+                        delta: brain.band_powers ? brain.band_powers.delta : 0,
+                        theta: brain.band_powers ? brain.band_powers.theta : 0,
+                        alpha: brain.band_powers ? brain.band_powers.alpha : 0,
+                        beta: brain.band_powers ? brain.band_powers.beta : 0,
+                        gamma: brain.band_powers ? brain.band_powers.gamma : 0,
+                        attention: brain.attention || 0,
+                        relaxation: brain.relaxation || 0,
+                        colorMood: brain.color_mood || 0.5
                     });
                     
                     if (brainwaveData.length > maxDataPoints) {
@@ -1000,20 +1109,64 @@ class MindShowDashboard:
                     }
                     
                     const traces = [
-                        { name: 'Delta', x: brainwaveData.map(d => d.time), y: brainwaveData.map(d => d.delta), line: {color: '#ff6b6b'} },
-                        { name: 'Theta', x: brainwaveData.map(d => d.time), y: brainwaveData.map(d => d.theta), line: {color: '#4ecdc4'} },
-                        { name: 'Alpha', x: brainwaveData.map(d => d.time), y: brainwaveData.map(d => d.alpha), line: {color: '#45b7d1'} },
-                        { name: 'Beta', x: brainwaveData.map(d => d.time), y: brainwaveData.map(d => d.beta), line: {color: '#96ceb4'} },
-                        { name: 'Gamma', x: brainwaveData.map(d => d.time), y: brainwaveData.map(d => d.gamma), line: {color: '#feca57'} }
+                        { 
+                            name: 'Attention', 
+                            x: brainwaveData.map(d => d.time), 
+                            y: brainwaveData.map(d => d.attention), 
+                            type: 'scatter',
+                            mode: 'lines',
+                            line: {color: '#ff6b6b', width: 2} 
+                        },
+                        { 
+                            name: 'Relaxation', 
+                            x: brainwaveData.map(d => d.time), 
+                            y: brainwaveData.map(d => d.relaxation), 
+                            type: 'scatter',
+                            mode: 'lines',
+                            line: {color: '#4ecdc4', width: 2} 
+                        },
+                        { 
+                            name: 'Color Mood', 
+                            x: brainwaveData.map(d => d.time), 
+                            y: brainwaveData.map(d => d.colorMood), 
+                            type: 'scatter',
+                            mode: 'lines',
+                            line: {color: '#ffaa00', width: 3},
+                            yaxis: 'y2'
+                        }
                     ];
                     
                     const layout = {
-                        xaxis: { title: 'Time' },
-                        yaxis: { title: 'Power' },
+                        title: 'Real-time Brain State & Color Mood',
+                        xaxis: { 
+                            title: 'Time',
+                            gridcolor: 'rgba(255,255,255,0.2)',
+                            color: 'white'
+                        },
+                        yaxis: { 
+                            title: 'Attention/Relaxation Score',
+                            range: [0, 1],
+                            gridcolor: 'rgba(255,255,255,0.2)',
+                            color: 'white'
+                        },
+                        yaxis2: {
+                            title: 'Color Mood (🔥→❄️)',
+                            titlefont: { color: '#ffaa00' },
+                            tickfont: { color: '#ffaa00' },
+                            overlaying: 'y',
+                            side: 'right',
+                            range: [0, 1],
+                            gridcolor: 'rgba(255,255,255,0.1)'
+                        },
                         plot_bgcolor: 'rgba(0,0,0,0)',
                         paper_bgcolor: 'rgba(0,0,0,0)',
                         font: { color: 'white' },
-                        margin: { t: 30, r: 30, b: 50, l: 50 }
+                        margin: { t: 50, r: 80, b: 50, l: 60 },
+                        legend: { 
+                            x: 0, 
+                            y: 1,
+                            bgcolor: 'rgba(0,0,0,0.3)'
+                        }
                     };
                     
                     Plotly.newPlot('brainwave-chart', traces, layout);
@@ -1124,8 +1277,26 @@ class MindShowIntegratedSystem:
                         else:
                             return obj
                     
+                    # Enhance brain_data with color mood information
+                    enhanced_brain_data = brain_data.copy() if brain_data else {}
+                    if brain_data:
+                        # Get color mood info from Pixelblaze controller
+                        attention = brain_data.get('attention_score', 0.5)
+                        relaxation = brain_data.get('relaxation_score', 0.5)
+                        engagement_level = (attention + relaxation) / 2
+                        
+                        # Add Phase 4b metrics
+                        enhanced_brain_data.update({
+                            'color_mood': self.pixelblaze_controller.previous_color_mood,
+                            'engagement_level': engagement_level,
+                            'attention': attention,
+                            'relaxation': relaxation,
+                            'color_mood_smoothing': self.pixelblaze_controller.color_mood_smoothing,
+                            'color_mood_history_length': len(self.pixelblaze_controller.color_mood_history)
+                        })
+                    
                     dashboard_data = {
-                        'brain_data': fix_nan_values(brain_data),
+                        'brain_data': fix_nan_values(enhanced_brain_data),
                         'pixelblaze_status': self.pixelblaze_controller.get_status(),
                         'stats': self.stats
                     }
