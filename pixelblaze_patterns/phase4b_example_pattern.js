@@ -109,12 +109,13 @@ export function render2D(index, x, y) {
 //    {"setVars": {"colorMoodBias": 0.2}}  // Warm bias
 //    {"setVars": {"colorMoodBias": 0.8}}  // Cool bias
 //
-// 2. The intensity variable controls animation speed with improved precision:
-//    - Range 0.25-0.75 maps to full speed range (0.1-3.0x)
-//    - Values below 0.25 = minimum speed
-//    - Values above 0.75 = maximum speed
-//    {"setVars": {"intensity": 0.25}}  // Slowest
-//    {"setVars": {"intensity": 0.75}}  // Fastest
+// 2. The intensity variable controls animation speed:
+//    - Range 0-1 maps to 50%-150% of normal speed
+//    - 0 = 50% normal speed (slow)
+//    - 0.5 = 100% normal speed (normal)
+//    - 1 = 150% normal speed (fast)
+//    {"setVars": {"intensity": 0.0}}  // Slowest (50%)
+//    {"setVars": {"intensity": 1.0}}  // Fastest (150%)
 //
 // 3. The MindShow system automatically sets colorMoodBias based on:
 //    - High attention (engaged) -> warm bias (reds/oranges)
