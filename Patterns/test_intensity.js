@@ -15,7 +15,7 @@ export function sliderIntensity(v) {
 export function beforeRender(delta) {
     // Use intensity to control animation speed
     // Map intensity (0-1) to speed multiplier (0.5-1.5)
-    // 0 = 50% normal speed, 1 = 150% normal speed
+    // 0 = 50% normal speed (slow), 1 = 150% normal speed (fast)
     var speedMultiplier = 0.5 + (intensity * 1.0)  // 0→0.5, 1→1.5
     
     tf = 5 * speedMultiplier
