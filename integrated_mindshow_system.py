@@ -1891,24 +1891,26 @@ class MindShowIntegratedSystem:
             return False
     
     def send_manual_mood(self, color_mood: float, intensity: float) -> bool:
-        """Send manual mood values to Pixelblaze"""
+        """Send manual mood values to Pixelblaze without pattern switching"""
         try:
-            # Create manual brain data with the specified mood
-            manual_brain_data = {
-                'brain_state': 'manual',
-                'attention': 0.5,  # Neutral attention
-                'relaxation': 0.5,  # Neutral relaxation
-                'engagement_level': intensity,
-                'color_mood': color_mood,
-                'timestamp': time.time(),
-                'source': 'manual',
-                'manual_mode': True
+            # Create variables dictionary with manual mood
+            manual_variables = {
+                'colorMoodBias': color_mood,
+                'intensity': intensity
             }
             
-            # Update Pixelblaze with manual mood
-            asyncio.create_task(self.pixelblaze_controller.update_from_brain_state(
-                'manual', manual_brain_data
-            ))
+            # Update all connected devices with variables only (no pattern switch)
+            update_tasks = []
+            for device in self.pixelblaze_controller.devices.values():
+                if device.connected:
+                    task = self.pixelblaze_controller._update_device_continuous(
+                        device, None, manual_variables  # None = no pattern switch
+                    )
+                    update_tasks.append(task)
+            
+            # Execute updates in parallel
+            if update_tasks:
+                asyncio.create_task(asyncio.gather(*update_tasks, return_exceptions=True))
             
             logger.info(f"🎨 Manual mood sent: {color_mood:.3f} (intensity: {intensity:.3f})")
             return True
