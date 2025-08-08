@@ -993,7 +993,7 @@ class MindShowDashboard:
                 
                 # Send to main system for Pixelblaze update
                 if hasattr(self, 'main_system'):
-                    success = self.main_system.send_manual_mood(color_mood, intensity)
+                    success = await self.main_system.send_manual_mood(color_mood, intensity)
                     return {"success": success, "color_mood": color_mood, "intensity": intensity}
                 else:
                     logger.warning("Main system not available for manual mood")
@@ -1890,7 +1890,7 @@ class MindShowIntegratedSystem:
             logger.error(f"❌ Error updating config: {e}")
             return False
     
-    def send_manual_mood(self, color_mood: float, intensity: float) -> bool:
+    async def send_manual_mood(self, color_mood: float, intensity: float) -> bool:
         """Send manual mood values to Pixelblaze without pattern switching"""
         try:
             # Create variables dictionary with manual mood
@@ -1910,7 +1910,7 @@ class MindShowIntegratedSystem:
             
             # Execute updates in parallel
             if update_tasks:
-                asyncio.create_task(asyncio.gather(*update_tasks, return_exceptions=True))
+                await asyncio.gather(*update_tasks, return_exceptions=True)
             
             logger.info(f"🎨 Manual mood sent: {color_mood:.3f} (intensity: {intensity:.3f})")
             return True
