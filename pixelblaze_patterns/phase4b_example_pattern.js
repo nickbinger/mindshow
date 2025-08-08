@@ -10,9 +10,16 @@ zigzag = true  // whether wiring is zigzag
 // 0 = warm (reds/oranges), 1 = cool (blues/violets), 0.5 = neutral
 export var colorMoodBias = 0.5
 
+// Intensity control for brightness (0 = dim, 1 = bright)
+export var intensity = 0.5
+
 // Optional: Slider UI in Pixelblaze interface
 export function sliderColorMoodBias(v) {
     colorMoodBias = v
+}
+
+export function sliderIntensity(v) {
+    intensity = v
 }
 
 // Color mood anchors and ranges (from Phase 4b research)
@@ -65,8 +72,10 @@ export function render(index) {
     }
     // If bias == 0 (neutral), hue remains unchanged
     
-    // Output the color with perceptual mood bias applied
-    hsv(h, 1, v)
+    // Output the color with perceptual mood bias and intensity applied
+    // Use intensity to control brightness (0 = dim, 1 = bright)
+    var brightness = v * intensity
+    hsv(h, 1, brightness)
 }
 
 // ===== Alternative Patterns to Test =====
@@ -89,7 +98,9 @@ export function render2D(index, x, y) {
         h = coolAnchor - (1 - (h % 1)) * range
     }
     
-    hsv(h, 1, 0.8)
+    // Use intensity to control brightness
+    var brightness = 0.8 * intensity
+    hsv(h, 1, brightness)
 }
 
 // ===== Usage Notes =====
@@ -97,7 +108,11 @@ export function render2D(index, x, y) {
 //    {"setVars": {"colorMoodBias": 0.2}}  // Warm bias
 //    {"setVars": {"colorMoodBias": 0.8}}  // Cool bias
 //
-// 2. The MindShow system automatically sets colorMoodBias based on:
+// 2. The intensity variable controls brightness (0 = dim, 1 = bright):
+//    {"setVars": {"intensity": 0.3}}  // Dim
+//    {"setVars": {"intensity": 0.8}}  // Bright
+//
+// 3. The MindShow system automatically sets colorMoodBias based on:
 //    - High attention (engaged) -> warm bias (reds/oranges)
 //    - High relaxation -> cool bias (blues/violets)
 //    - Balanced state -> neutral (full spectrum)
