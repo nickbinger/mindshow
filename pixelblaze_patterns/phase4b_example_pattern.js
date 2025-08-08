@@ -10,7 +10,7 @@ zigzag = true  // whether wiring is zigzag
 // 0 = warm (reds/oranges), 1 = cool (blues/violets), 0.5 = neutral
 export var colorMoodBias = 0.5
 
-// Intensity control for brightness (0 = dim, 1 = bright)
+// Speed control (0 = slow, 1 = fast)
 export var intensity = 0.5
 
 // Optional: Slider UI in Pixelblaze interface
@@ -30,7 +30,12 @@ var coolRange = 0.16   // Cool tones span (blue to violet, 60°)
 
 // ===== Pattern Animation Variables =====
 export function beforeRender(delta) {
-    tf = 5  // Time factor for animation speed
+    // Use intensity to control animation speed
+    // Map intensity (0-1) to speed multiplier (0.1-3.0)
+    // Avoid division by zero by using minimum speed of 0.1
+    var speedMultiplier = 0.1 + (intensity * 2.9)
+    
+    tf = 5 * speedMultiplier  // Time factor for animation speed
     t1 = wave(time(0.15 * tf)) * PI2
     t2 = wave(time(0.19 * tf)) * PI2
     z = 2 + wave(time(0.1 * tf)) * 5
@@ -72,10 +77,8 @@ export function render(index) {
     }
     // If bias == 0 (neutral), hue remains unchanged
     
-    // Output the color with perceptual mood bias and intensity applied
-    // Use intensity to control brightness (0 = dim, 1 = bright)
-    var brightness = v * intensity
-    hsv(h, 1, brightness)
+    // Output the color with perceptual mood bias applied
+    hsv(h, 1, v)
 }
 
 // ===== Alternative Patterns to Test =====
@@ -98,9 +101,7 @@ export function render2D(index, x, y) {
         h = coolAnchor - (1 - (h % 1)) * range
     }
     
-    // Use intensity to control brightness
-    var brightness = 0.8 * intensity
-    hsv(h, 1, brightness)
+    hsv(h, 1, 0.8)
 }
 
 // ===== Usage Notes =====
@@ -108,9 +109,9 @@ export function render2D(index, x, y) {
 //    {"setVars": {"colorMoodBias": 0.2}}  // Warm bias
 //    {"setVars": {"colorMoodBias": 0.8}}  // Cool bias
 //
-// 2. The intensity variable controls brightness (0 = dim, 1 = bright):
-//    {"setVars": {"intensity": 0.3}}  // Dim
-//    {"setVars": {"intensity": 0.8}}  // Bright
+// 2. The intensity variable controls animation speed (0 = slow, 1 = fast):
+//    {"setVars": {"intensity": 0.1}}  // Very slow
+//    {"setVars": {"intensity": 0.8}}  // Fast
 //
 // 3. The MindShow system automatically sets colorMoodBias based on:
 //    - High attention (engaged) -> warm bias (reds/oranges)
