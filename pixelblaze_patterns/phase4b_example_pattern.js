@@ -31,9 +31,11 @@ var coolRange = 0.16   // Cool tones span (blue to violet, 60°)
 // ===== Pattern Animation Variables =====
 export function beforeRender(delta) {
     // Use intensity to control animation speed
-    // Map intensity (0-1) to speed multiplier (0.1-3.0)
-    // Avoid division by zero by using minimum speed of 0.1
-    var speedMultiplier = 0.1 + (intensity * 2.9)
+    // Map intensity (0.25-0.75) to speed multiplier (0.1-3.0)
+    // This gives more precise control by using the middle range
+    var normalizedIntensity = (intensity - 0.25) / 0.5  // Map 0.25-0.75 to 0-1
+    normalizedIntensity = clamp(normalizedIntensity, 0, 1)  // Clamp to valid range
+    var speedMultiplier = 0.1 + (normalizedIntensity * 2.9)
     
     tf = 5 * speedMultiplier  // Time factor for animation speed
     t1 = wave(time(0.15 * tf)) * PI2
@@ -85,8 +87,8 @@ export function render(index) {
 
 // Simple rainbow sweep with color mood bias
 export function render2D(index, x, y) {
-    // Simple diagonal rainbow
-    h = (x + y) / (width + height)
+    // Simple diagonal rainbow - FIXED: use w instead of width/height
+    h = (x + y) / (w + w)  // Using w (8) instead of undefined width/height
     
     // Apply Phase 4b color mood bias
     var bias = (colorMoodBias - 0.5) * 2
@@ -109,14 +111,17 @@ export function render2D(index, x, y) {
 //    {"setVars": {"colorMoodBias": 0.2}}  // Warm bias
 //    {"setVars": {"colorMoodBias": 0.8}}  // Cool bias
 //
-// 2. The intensity variable controls animation speed (0 = slow, 1 = fast):
-//    {"setVars": {"intensity": 0.1}}  // Very slow
-//    {"setVars": {"intensity": 0.8}}  // Fast
+// 2. The intensity variable controls animation speed with improved precision:
+//    - Range 0.25-0.75 maps to full speed range (0.1-3.0x)
+//    - Values below 0.25 = minimum speed
+//    - Values above 0.75 = maximum speed
+//    {"setVars": {"intensity": 0.25}}  // Slowest
+//    {"setVars": {"intensity": 0.75}}  // Fastest
 //
 // 3. The MindShow system automatically sets colorMoodBias based on:
 //    - High attention (engaged) -> warm bias (reds/oranges)
 //    - High relaxation -> cool bias (blues/violets)
-//    - Balanced state -> neutral (full spectrum)
+//    - Neutral state -> balanced spectrum
 //
 // 3. The hue range compression ensures color variety even at extremes:
 //    - Full warm (0.0): Shows only reds through yellows
