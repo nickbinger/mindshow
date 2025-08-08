@@ -980,28 +980,41 @@ class MindShowDashboard:
         
         @self.app.post("/api/manual_mood")
         async def manual_mood(request: dict):
-            """Send manual mood values to Pixelblaze"""
+            """Send manual mood and intensity values to Pixelblaze"""
             try:
-                color_mood = request.get("color_mood")
-                intensity = request.get("intensity")
+                color_mood = request.get('color_mood', 0.5)
+                intensity = request.get('intensity', 0.5)
                 
-                if color_mood is None or intensity is None:
-                    return {"success": False, "error": "Missing color_mood or intensity"}
+                # Validate inputs
+                if not (0 <= color_mood <= 1 and 0 <= intensity <= 1):
+                    return {"success": False, "error": "Values must be between 0 and 1"}
                 
-                # Validate values
-                if not (0.0 <= color_mood <= 1.0 and 0.0 <= intensity <= 1.0):
-                    return {"success": False, "error": "Values must be between 0.0 and 1.0"}
-                
-                # Send to main system for Pixelblaze update
                 if hasattr(self, 'main_system'):
                     success = await self.main_system.send_manual_mood(color_mood, intensity)
                     return {"success": success, "color_mood": color_mood, "intensity": intensity}
                 else:
-                    logger.warning("Main system not available for manual mood")
-                    return {"success": False, "error": "Main system not available"}
-                
+                    return {"success": False, "error": "System not initialized"}
+                    
             except Exception as e:
-                logger.error(f"Error sending manual mood: {e}")
+                return {"success": False, "error": str(e)}
+        
+        @self.app.post("/api/send_intensity")
+        async def send_intensity(request: dict):
+            """Send intensity value only to Pixelblaze (no color change)"""
+            try:
+                intensity = request.get('intensity', 0.5)
+                
+                # Validate input
+                if not (0 <= intensity <= 1):
+                    return {"success": False, "error": "Intensity must be between 0 and 1"}
+                
+                if hasattr(self, 'main_system'):
+                    success = await self.main_system.send_intensity_only(intensity)
+                    return {"success": success, "intensity": intensity}
+                else:
+                    return {"success": False, "error": "System not initialized"}
+                    
+            except Exception as e:
                 return {"success": False, "error": str(e)}
         
         @self.app.get("/api/get_patterns")
@@ -1644,6 +1657,8 @@ class MindShowDashboard:
                     intensitySlider.addEventListener('input', (e) => {
                         const value = parseFloat(e.target.value);
                         intensityValue.textContent = value.toFixed(2);
+                        // Send intensity immediately when slider changes
+                        sendIntensityOnly(value);
                     });
                     
                     sendButton.addEventListener('click', () => {
@@ -1651,6 +1666,29 @@ class MindShowDashboard:
                         const intensityValue = parseFloat(intensitySlider.value);
                         
                         sendManualMood(moodValue, intensityValue);
+                    });
+                }
+                
+                function sendIntensityOnly(intensity) {
+                    fetch('/api/send_intensity', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            intensity: intensity
+                        })
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            showDebugMessage(`⚡ Intensity updated: ${intensity.toFixed(2)}`);
+                        } else {
+                            showDebugMessage(`❌ Intensity failed: ${data.error}`);
+                        }
+                    })
+                    .catch(error => {
+                        showDebugMessage(`❌ Intensity error: ${error}`);
                     });
                 }
                 
@@ -1918,6 +1956,34 @@ class MindShowIntegratedSystem:
             
         except Exception as e:
             logger.error(f"❌ Failed to send manual mood: {e}")
+            return False
+    
+    async def send_intensity_only(self, intensity: float) -> bool:
+        """Send intensity value only to Pixelblaze (no color change)"""
+        try:
+            # Create variables dictionary with intensity only
+            intensity_variables = {
+                'intensity': intensity
+            }
+            
+            # Update all connected devices with intensity only (no pattern switch)
+            update_tasks = []
+            for device in self.pixelblaze_controller.devices.values():
+                if device.connected:
+                    task = self.pixelblaze_controller._update_device_continuous(
+                        device, None, intensity_variables  # None = no pattern switch
+                    )
+                    update_tasks.append(task)
+            
+            # Execute updates in parallel
+            if update_tasks:
+                await asyncio.gather(*update_tasks, return_exceptions=True)
+            
+            logger.info(f"⚡ Intensity only sent: {intensity:.3f}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to send intensity only: {e}")
             return False
     
     def get_device_patterns(self, device_ip: str) -> List[Dict[str, str]]:
