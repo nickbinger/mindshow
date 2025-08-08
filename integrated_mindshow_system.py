@@ -861,6 +861,7 @@ class MultiPixelblazeController:
                     logger.debug(f"📝 Set pattern on {device.name}: {pattern_name} (ID: {pattern_id})")
             
             # Always update variables (including colorMoodBias)
+            logger.debug(f"🎯 Sending variables to {device.name}: {variables}")
             device.websocket.send(json.dumps({"setVars": variables}))
             device.variables.update(variables)
             
