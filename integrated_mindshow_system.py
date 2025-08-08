@@ -1373,7 +1373,8 @@ class MindShowDashboard:
                 const maxDataPoints = 50;
                 let brainwaveData = [];
                 let lastUpdateTime = 0;
-                const UPDATE_THROTTLE = 500; // Only update UI every 500ms
+                const UPDATE_THROTTLE = 2000; // Only update UI every 2 seconds
+                let isUserInteracting = false;
                 
                 ws.onopen = () => console.log('Dashboard connected');
                 ws.onmessage = (event) => {
@@ -1381,7 +1382,8 @@ class MindShowDashboard:
                     const now = Date.now();
                     
                     // Throttle updates to prevent UI flickering
-                    if (now - lastUpdateTime > UPDATE_THROTTLE) {
+                    // Don't update if user is interacting with dropdowns
+                    if (now - lastUpdateTime > UPDATE_THROTTLE && !isUserInteracting) {
                         updateDashboard(data);
                         lastUpdateTime = now;
                     }
@@ -1694,6 +1696,9 @@ class MindShowDashboard:
                     
                     // Populate device selector when devices are available
                     function updateDeviceSelector(devices) {
+                        // Don't update if user is interacting
+                        if (isUserInteracting) return;
+                        
                         // Preserve current selection
                         const currentSelection = deviceSelector.value;
                         
@@ -1722,6 +1727,23 @@ class MindShowDashboard:
                             }
                         }
                     }
+                    
+                    // Add interaction detection
+                    deviceSelector.addEventListener('focus', () => {
+                        isUserInteracting = true;
+                    });
+                    
+                    deviceSelector.addEventListener('blur', () => {
+                        setTimeout(() => { isUserInteracting = false; }, 100);
+                    });
+                    
+                    patternSelector.addEventListener('focus', () => {
+                        isUserInteracting = true;
+                    });
+                    
+                    patternSelector.addEventListener('blur', () => {
+                        setTimeout(() => { isUserInteracting = false; }, 100);
+                    });
                     
                     // Populate pattern selector when device is selected
                     deviceSelector.addEventListener('change', () => {
