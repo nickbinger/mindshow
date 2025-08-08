@@ -13,11 +13,10 @@ export function sliderIntensity(v) {
 }
 
 export function beforeRender(delta) {
-    // Use intensity to control animation speed with improved precision
-    // Map intensity (0.25-0.75) to speed multiplier (0.1-3.0)
-    var normalizedIntensity = (intensity - 0.25) / 0.5  // Map 0.25-0.75 to 0-1
-    normalizedIntensity = clamp(normalizedIntensity, 0, 1)  // Clamp to valid range
-    var speedMultiplier = 0.1 + (normalizedIntensity * 2.9)
+    // Use intensity to control animation speed
+    // Map intensity (0-1) to speed multiplier (0.5-1.5)
+    // 0 = 50% normal speed, 1 = 150% normal speed
+    var speedMultiplier = 0.5 + (intensity * 1.0)  // 0→0.5, 1→1.5
     
     tf = 5 * speedMultiplier
 }
