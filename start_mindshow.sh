@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# MindShow Startup Script
+# MindShow Startup Script - Daemon Mode
 # Handles all dependencies and provides single-command startup
 
 set -e  # Exit on any error
@@ -15,6 +15,9 @@ NC='\033[0m' # No Color
 # Configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PYTHON_SCRIPT="integrated_mindshow_system.py"
+PID_FILE="/tmp/mindshow_system.pid"
+MUSE_PID_FILE="/tmp/mindshow_muse.pid"
+LOG_FILE="/tmp/mindshow.log"
 MUSE_STREAM_TIMEOUT=30
 SYSTEM_STARTUP_TIMEOUT=60
 
@@ -67,31 +70,29 @@ start_muse_stream() {
     # Check if muselsl is available
     if ! command_exists muselsl; then
         print_error "muselsl command not found. Please install it first."
-        exit 1
+        return 1
     fi
     
     # Check if Muse is available
     print_status "Checking for Muse devices..."
     local muse_list_output=$(DYLD_LIBRARY_PATH=/opt/homebrew/lib muselsl list 2>&1)
     if echo "$muse_list_output" | grep -q "No Muses found"; then
-        print_error "No Muse devices found. Please ensure your Muse headband is connected and turned on."
-        print_status "Available commands:"
-        print_status "  - Check connection: DYLD_LIBRARY_PATH=/opt/homebrew/lib muselsl list"
-        print_status "  - Start manually: DYLD_LIBRARY_PATH=/opt/homebrew/lib muselsl stream"
+        print_warning "No Muse devices found. Starting in demo mode."
         return 1
     fi
     
-    # Start muselsl stream in background
+    # Start muselsl stream in background with proper logging
     print_status "Starting Muse LSL stream..."
-    DYLD_LIBRARY_PATH=/opt/homebrew/lib muselsl stream > /dev/null 2>&1 &
+    DYLD_LIBRARY_PATH=/opt/homebrew/lib muselsl stream >> "$LOG_FILE" 2>&1 &
     local muse_pid=$!
+    echo $muse_pid > "$MUSE_PID_FILE"
     
     # Wait for stream to be available
     print_status "Waiting for Muse stream to be available..."
     local attempts=0
     while [ $attempts -lt $MUSE_STREAM_TIMEOUT ]; do
         if [ "$(check_muse_stream)" -gt 0 ]; then
-            print_success "Muse LSL stream is now available"
+            print_success "Muse LSL stream is now available (PID: $muse_pid)"
             return 0
         fi
         sleep 1
@@ -100,11 +101,9 @@ start_muse_stream() {
     
     # If we get here, stream didn't start
     kill $muse_pid 2>/dev/null || true
-    print_error "Muse LSL stream failed to start within $MUSE_STREAM_TIMEOUT seconds"
-    print_status "This could be because:"
-    print_status "  - Muse headband is not connected or turned on"
-    print_status "  - Muse app is already streaming"
-    print_status "  - Bluetooth connection issues"
+    rm -f "$MUSE_PID_FILE"
+    print_warning "Muse LSL stream failed to start within $MUSE_STREAM_TIMEOUT seconds"
+    print_status "Starting in demo mode without Muse..."
     return 1
 }
 
@@ -147,18 +146,19 @@ start_main_system() {
     # Kill any existing processes on port 8000
     kill_port 8000
     
-    # Start the main system
+    # Start the main system in background with proper logging
     cd "$SCRIPT_DIR"
-    DYLD_LIBRARY_PATH=/opt/homebrew/lib python3 "$PYTHON_SCRIPT" &
+    DYLD_LIBRARY_PATH=/opt/homebrew/lib python3 "$PYTHON_SCRIPT" >> "$LOG_FILE" 2>&1 &
     local system_pid=$!
+    echo $system_pid > "$PID_FILE"
     
     # Wait for system to start
     print_status "Waiting for system to start..."
     local attempts=0
     while [ $attempts -lt $SYSTEM_STARTUP_TIMEOUT ]; do
         if port_in_use 8000; then
-            print_success "MindShow system is now running on http://localhost:8000"
-            echo $system_pid > /tmp/mindshow_system.pid
+            print_success "MindShow system is now running (PID: $system_pid)"
+            print_success "Dashboard: http://localhost:8000"
             return 0
         fi
         sleep 1
@@ -167,20 +167,50 @@ start_main_system() {
     
     # If we get here, system didn't start
     kill $system_pid 2>/dev/null || true
+    rm -f "$PID_FILE"
     print_error "MindShow system failed to start within $SYSTEM_STARTUP_TIMEOUT seconds"
     return 1
 }
 
+# Function to cleanup on startup
+cleanup_on_startup() {
+    print_status "Cleaning up any existing processes..."
+    
+    # Kill any existing processes
+    if [ -f "$PID_FILE" ]; then
+        local pid=$(cat "$PID_FILE")
+        kill $pid 2>/dev/null || true
+        rm -f "$PID_FILE"
+    fi
+    
+    if [ -f "$MUSE_PID_FILE" ]; then
+        local muse_pid=$(cat "$MUSE_PID_FILE")
+        kill $muse_pid 2>/dev/null || true
+        rm -f "$MUSE_PID_FILE"
+    fi
+    
+    # Kill any remaining processes
+    pkill -f "integrated_mindshow_system.py" 2>/dev/null || true
+    pkill -f "muselsl stream" 2>/dev/null || true
+    kill_port 8000
+    
+    # Clear log file
+    > "$LOG_FILE"
+}
+
 # Main execution
 main() {
-    echo "🧠 MindShow Startup Script"
-    echo "=========================="
+    echo "🧠 MindShow Startup Script (Daemon Mode)"
+    echo "========================================="
     
     # Check if we're in the right directory
     if [ ! -f "$SCRIPT_DIR/$PYTHON_SCRIPT" ]; then
         print_error "Please run this script from the mindshow directory"
         exit 1
     fi
+    
+    # Cleanup any existing processes
+    cleanup_on_startup
     
     # Check Python dependencies
     check_python_deps
@@ -190,49 +220,20 @@ main() {
         print_success "Muse LSL stream is already running"
     else
         # Start Muse stream
-        if ! start_muse_stream; then
-            print_warning "Muse LSL stream could not be started"
-            print_status "Starting system without Muse for testing..."
-            print_status "You can connect Muse later and restart the system"
-        fi
+        start_muse_stream
     fi
     
     # Start main system
     start_main_system || exit 1
     
     echo ""
-    print_success "🎉 MindShow system is ready!"
+    print_success "🎉 MindShow system is ready and running in background!"
     print_status "Dashboard: http://localhost:8000"
-    print_status "Press Ctrl+C to stop the system"
+    print_status "Log file: $LOG_FILE"
+    print_status "Use './status_mindshow.sh' to check status"
+    print_status "Use './stop_mindshow.sh' to stop the system"
     echo ""
-    
-    # Wait for user to stop
-    wait
 }
-
-# Handle cleanup on exit
-cleanup() {
-    print_status "Shutting down MindShow system..."
-    
-    # Kill main system if PID file exists
-    if [ -f /tmp/mindshow_system.pid ]; then
-        local pid=$(cat /tmp/mindshow_system.pid)
-        kill $pid 2>/dev/null || true
-        rm -f /tmp/mindshow_system.pid
-    fi
-    
-    # Kill any remaining processes on port 8000
-    kill_port 8000
-    
-    # Kill muselsl processes
-    pkill -f "muselsl stream" 2>/dev/null || true
-    
-    print_success "MindShow system stopped"
-    exit 0
-}
-
-# Set up signal handlers
-trap cleanup SIGINT SIGTERM
 
 # Run main function
 main "$@"

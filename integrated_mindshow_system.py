@@ -86,7 +86,7 @@ class MindShowConfig:
     pi_mode: bool = False  # Enable Pi optimizations
     
     # Phase 4b: Continuous Color Mood Configuration
-    color_mood_smoothing: float = 0.3  # Exponential moving average factor (0-1)
+    color_mood_smoothing: float = 0.1  # Exponential moving average factor (0-1) - reduced for smoother transitions
     color_mood_intensity_scale: float = 0.5  # Base intensity for color shifts
     color_mood_attention_weight: float = 0.4  # How much attention affects warm shift
     color_mood_relaxation_weight: float = 0.4  # How much relaxation affects cool shift
@@ -95,7 +95,7 @@ class MindShowConfig:
     attention_min: float = 0.0  # Minimum value for attention normalization
     attention_max: float = 10.0  # Maximum value for attention normalization
     relaxation_min: float = 0.0  # Minimum value for relaxation normalization
-    relaxation_max: float = 5.0  # Maximum value for relaxation normalization
+    relaxation_max: float = 500000.0  # Maximum value for relaxation normalization (adjusted for high alpha power)
 
 # =============================================================================
 # EEG PROCESSING
@@ -438,15 +438,15 @@ class IntegratedEEGProcessor:
         
         # Method 3: Alpha power only (fallback 2)
         if not np.isnan(band_powers['alpha']) and band_powers['alpha'] > 0:
-            # Scale alpha power to reasonable range (0-5)
-            relaxation_score = min(5.0, band_powers['alpha'] / 10.0)
+            # Scale alpha power to reasonable range (0-500000)
+            relaxation_score = min(500000.0, band_powers['alpha'])
             logger.debug(f"🔄 Method 3 (Alpha power): {relaxation_score:.4f}")
             return relaxation_score
         
         # Method 4: Relative alpha dominance (fallback 3)
         total_power = sum([v for v in band_powers.values() if not np.isnan(v) and v > 0])
         if total_power > 0 and not np.isnan(band_powers['alpha']):
-            relaxation_score = band_powers['alpha'] / total_power * 5.0  # Scale to 0-5 range
+            relaxation_score = band_powers['alpha'] / total_power * 500000.0  # Scale to 0-500000 range
             logger.debug(f"🔄 Method 4 (Alpha dominance): {relaxation_score:.4f}")
             return relaxation_score
         
@@ -606,6 +606,11 @@ class MultiPixelblazeController:
         self.pattern_sync_enabled = True
         self.last_brain_state = "neutral"
         
+        # Manual pattern selection tracking
+        self.manual_pattern_selected = False  # Flag to track manual pattern selection
+        self.manual_pattern_timeout = 0.0  # 0 = no timeout - manual patterns stay until explicitly changed
+        self.last_manual_selection_time = 0.0
+        
         # Continuous color mood mapping parameters
         self.color_mood_smoothing = config.color_mood_smoothing
         self.previous_color_mood = 0.5  # Initialize to neutral
@@ -615,6 +620,12 @@ class MultiPixelblazeController:
         self.attention_weight = config.color_mood_attention_weight
         self.relaxation_weight = config.color_mood_relaxation_weight
         self.intensity_scale = config.color_mood_intensity_scale
+        
+        # Anti-flicker parameters
+        self.last_variable_update = {}  # Track last update time per device
+        self.last_variable_values = {}  # Track last values per device
+        self.variable_update_threshold = 0.02  # Minimum change to trigger update
+        self.variable_update_interval = 0.5  # Minimum time between updates (seconds)
         
         # Brain state to LED mappings (research-based)
         # Phase 4b: Perceptual color mood integration
@@ -815,9 +826,32 @@ class MultiPixelblazeController:
             logger.info(f"🎨 Brain state changed: {self.last_brain_state} → {brain_state}")
             self.last_brain_state = brain_state
         
-        # Get mapping for current brain state
+        # Check if manual pattern selection is still active
+        current_time = time.time()
+        if self.manual_pattern_selected:
+            if self.manual_pattern_timeout == 0.0:
+                # Timeout disabled - manual patterns stay active indefinitely
+                target_pattern = None
+                logger.debug("🎛️ Manual pattern active (no timeout) - skipping automatic pattern switch")
+            elif (current_time - self.last_manual_selection_time) < self.manual_pattern_timeout:
+                # Manual pattern is still within timeout period
+                target_pattern = None
+                logger.debug("🎛️ Manual pattern active - skipping automatic pattern switch")
+            else:
+                # Manual pattern timeout expired - allow automatic switching
+                logger.info("⏰ Manual pattern timeout expired - resuming automatic pattern switching")
+                self.manual_pattern_selected = False
+                # Get mapping for current brain state
+                mapping = self.state_mappings.get(brain_state, self.state_mappings['neutral'])
+                target_pattern = mapping['pattern_name'] if state_changed else None
+        else:
+            # No manual pattern active - allow automatic switching
+            # Get mapping for current brain state
+            mapping = self.state_mappings.get(brain_state, self.state_mappings['neutral'])
+            target_pattern = mapping['pattern_name'] if state_changed else None
+        
+        # Always get variables for color mood updates
         mapping = self.state_mappings.get(brain_state, self.state_mappings['neutral'])
-        target_pattern = mapping['pattern_name'] if state_changed else None
         target_variables = mapping['variables'].copy()  # Copy to avoid modifying defaults
         
         # Always update color mood bias
@@ -833,8 +867,8 @@ class MultiPixelblazeController:
         update_tasks = []
         for device in self.devices.values():
             if device.connected:
-                # Only switch patterns if state changed
-                pattern_to_set = target_pattern if state_changed else None
+                # Only switch patterns if specified (state change) and manual pattern not active
+                pattern_to_set = target_pattern if target_pattern else None
                 task = self._update_device_continuous(device, pattern_to_set, target_variables)
                 update_tasks.append(task)
         
@@ -842,8 +876,17 @@ class MultiPixelblazeController:
         if update_tasks:
             await asyncio.gather(*update_tasks, return_exceptions=True)
     
+    def set_manual_pattern_selection(self, pattern_name: str):
+        """Mark that a pattern was manually selected by the user"""
+        self.manual_pattern_selected = True
+        self.last_manual_selection_time = time.time()
+        if self.manual_pattern_timeout == 0.0:
+            logger.info(f"🎛️ Manual pattern selected: {pattern_name} - auto-switching disabled indefinitely")
+        else:
+            logger.info(f"🎛️ Manual pattern selected: {pattern_name} - auto-switching disabled for {self.manual_pattern_timeout}s")
+    
     async def _update_device_continuous(self, device: PixelblazeDevice, pattern_name: Optional[str], variables: Dict[str, float]):
-        """Update a single device with continuous color mood support"""
+        """Update a single device with continuous color mood support and anti-flicker protection"""
         try:
             # Only switch pattern if specified (state change)
             if pattern_name:
@@ -860,10 +903,41 @@ class MultiPixelblazeController:
                     device.active_pattern = pattern_id
                     logger.debug(f"📝 Set pattern on {device.name}: {pattern_name} (ID: {pattern_id})")
             
-            # Always update variables (including colorMoodBias)
-            logger.debug(f"🎯 Sending variables to {device.name}: {variables}")
-            device.websocket.send(json.dumps({"setVars": variables}))
-            device.variables.update(variables)
+            # Anti-flicker logic: only update variables if significant change or enough time passed
+            current_time = time.time()
+            device_key = device.ip_address
+            
+            # Initialize tracking for this device if needed
+            if device_key not in self.last_variable_update:
+                self.last_variable_update[device_key] = 0
+                self.last_variable_values[device_key] = {}
+            
+            # Check if enough time has passed since last update
+            time_since_update = current_time - self.last_variable_update[device_key]
+            
+            # Check if any variable has changed significantly
+            significant_change = False
+            for var_name, var_value in variables.items():
+                last_value = self.last_variable_values[device_key].get(var_name, None)
+                if last_value is None:
+                    # First time setting this variable
+                    significant_change = True
+                elif abs(var_value - last_value) >= self.variable_update_threshold:
+                    # Significant change detected
+                    significant_change = True
+            
+            # Update if significant change or enough time passed
+            if significant_change or time_since_update >= self.variable_update_interval:
+                logger.debug(f"🎯 Sending variables to {device.name}: {variables}")
+                device.websocket.send(json.dumps({"setVars": variables}))
+                device.variables.update(variables)
+                
+                # Update tracking
+                self.last_variable_update[device_key] = current_time
+                self.last_variable_values[device_key] = variables.copy()
+            else:
+                # Skip update to prevent flickering
+                logger.debug(f"⏭️ Skipping variable update to {device.name} (no significant change)")
             
         except Exception as e:
             logger.error(f"Failed to update {device.name}: {e}")
@@ -1387,7 +1461,7 @@ class MindShowDashboard:
                 const maxDataPoints = 50;
                 let brainwaveData = [];
                 let lastUpdateTime = 0;
-                const UPDATE_THROTTLE = 2000; // Only update UI every 2 seconds
+                const UPDATE_THROTTLE = 100; // Update UI every 100ms (10Hz)
                 let isUserInteracting = false;
                 
                 ws.onopen = () => console.log('Dashboard connected');
@@ -2012,26 +2086,89 @@ class MindShowIntegratedSystem:
     def switch_device_pattern(self, device_ip: str, pattern_id: str) -> Tuple[bool, str]:
         """Switch to a specific pattern on a device"""
         try:
-            # Find the device in the devices dictionary
+            # Find the device
             device = self.pixelblaze_controller.devices.get(device_ip)
-            if device and device.connected:
-                # Find the pattern name
-                pattern_name = device.patterns.get(pattern_id, "Unknown")
-                
-                # Switch the pattern
-                asyncio.create_task(self.pixelblaze_controller._update_device(
-                    device, pattern_name, {}
-                ))
-                
-                logger.info(f"🎭 Switched device {device_ip} to pattern: {pattern_name}")
-                return True, pattern_name
+            if not device:
+                return False, f"Device {device_ip} not found"
             
-            logger.warning(f"❌ Device {device_ip} not found or not connected")
-            return False, f"Device {device_ip} not found or not connected"
+            # Find pattern name by ID
+            pattern_name = device.patterns.get(pattern_id)
+            if not pattern_name:
+                return False, f"Pattern ID {pattern_id} not found"
+            
+            # Mark this as a manual pattern selection
+            self.pixelblaze_controller.set_manual_pattern_selection(pattern_name)
+            
+            # Switch the pattern
+            asyncio.create_task(self.pixelblaze_controller._update_device(device, pattern_name, {}))
+            
+            logger.info(f"🎛️ Manually switched to pattern: {pattern_name} on {device_ip}")
+            return True, pattern_name
             
         except Exception as e:
-            logger.error(f"❌ Error switching pattern on {device_ip}: {e}")
+            logger.error(f"Error switching pattern: {e}")
             return False, str(e)
+    
+    async def _switch_to_startup_pattern(self):
+        """Automatically switch to phase4b color mood pattern on all devices"""
+        try:
+            startup_pattern_name = "phase4b_example_pattern.js"
+            
+            for device_ip, device in self.pixelblaze_controller.devices.items():
+                if not device.connected:
+                    continue
+                
+                # First try to find the exact phase4b pattern
+                pattern_id = None
+                pattern_name = None
+                
+                for pid, pname in device.patterns.items():
+                    if startup_pattern_name in pname:
+                        pattern_id = pid
+                        pattern_name = pname
+                        break
+                
+                # If not found, try to find a pattern that might support color mood variables
+                if not pattern_id:
+                    logger.warning(f"⚠️ Startup pattern '{startup_pattern_name}' not found on device {device_ip}")
+                    logger.info(f"📋 Available patterns on {device_ip}: {list(device.patterns.values())}")
+                    
+                    # Try to find a pattern that might work with color mood
+                    # First look for the exact Phase 4b pattern
+                    for pid, pname in device.patterns.items():
+                        if 'phase 4b' in pname.lower() and 'color mood' in pname.lower():
+                            pattern_id = pid
+                            pattern_name = pname
+                            logger.info(f"🎨 Found perfect Phase 4b pattern: {pattern_name}")
+                            break
+                    
+                    # If not found, look for other color/mood patterns
+                    if not pattern_id:
+                        for pid, pname in device.patterns.items():
+                            if any(keyword in pname.lower() for keyword in ['color', 'mood', 'hue', 'rainbow', 'gradient']):
+                                pattern_id = pid
+                                pattern_name = pname
+                                logger.info(f"🎨 Found alternative pattern: {pattern_name}")
+                                break
+                    
+                    # If still not found, use the first available pattern
+                    if not pattern_id and device.patterns:
+                        pattern_id = list(device.patterns.keys())[0]
+                        pattern_name = list(device.patterns.values())[0]
+                        logger.info(f"🎨 Using first available pattern: {pattern_name}")
+                
+                if pattern_id and pattern_name:
+                    logger.info(f"🎨 Switching {device_ip} to pattern: {pattern_name}")
+                    # Mark this as a manual pattern selection
+                    self.pixelblaze_controller.set_manual_pattern_selection(pattern_name)
+                    # Switch the pattern
+                    await self.pixelblaze_controller._update_device(device, pattern_name, {})
+                else:
+                    logger.error(f"❌ No patterns available on device {device_ip}")
+            
+            logger.info("✅ Startup pattern switching completed")
+        except Exception as e:
+            logger.error(f"❌ Error switching to startup pattern: {e}")
     
     async def start(self):
         """Start the integrated system"""
@@ -2058,6 +2195,10 @@ class MindShowIntegratedSystem:
         
         if connected_devices == 0:
             logger.warning("⚠️  No Pixelblaze devices connected after all retries - continuing without LED control")
+        else:
+            # Automatically switch to phase4b color mood pattern on startup
+            logger.info("🎨 Automatically switching to phase4b color mood pattern...")
+            await self._switch_to_startup_pattern()
         
         # Start web dashboard
         dashboard_task = asyncio.create_task(self._run_dashboard())

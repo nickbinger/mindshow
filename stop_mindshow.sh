@@ -10,6 +10,11 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
+# Configuration
+PID_FILE="/tmp/mindshow_system.pid"
+MUSE_PID_FILE="/tmp/mindshow_muse.pid"
+LOG_FILE="/tmp/mindshow.log"
+
 # Function to print colored output
 print_status() {
     echo -e "${BLUE}[INFO]${NC} $1"
@@ -67,25 +72,45 @@ kill_processes() {
     fi
 }
 
+# Function to kill process by PID file
+kill_by_pid_file() {
+    local pid_file=$1
+    local name=$2
+    
+    if [ -f "$pid_file" ]; then
+        local pid=$(cat "$pid_file")
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+            print_status "Stopping $name (PID: $pid)..."
+            kill "$pid" 2>/dev/null || true
+            sleep 2
+            
+            # Force kill if still running
+            if kill -0 "$pid" 2>/dev/null; then
+                print_warning "Force killing $name (PID: $pid)..."
+                kill -9 "$pid" 2>/dev/null || true
+            fi
+        else
+            print_status "$name is not running (PID: $pid)"
+        fi
+        rm -f "$pid_file"
+    else
+        print_status "$name PID file not found"
+    fi
+}
+
 # Main execution
 main() {
     echo "🛑 MindShow Stop Script"
     echo "======================="
     
-    # Kill main system if PID file exists
-    if [ -f /tmp/mindshow_system.pid ]; then
-        local pid=$(cat /tmp/mindshow_system.pid)
-        print_status "Stopping MindShow system (PID: $pid)..."
-        kill $pid 2>/dev/null || true
-        rm -f /tmp/mindshow_system.pid
-        sleep 2
-    fi
+    # Kill main system by PID file
+    kill_by_pid_file "$PID_FILE" "MindShow System"
+    
+    # Kill Muse stream by PID file
+    kill_by_pid_file "$MUSE_PID_FILE" "Muse LSL Stream"
     
     # Kill any remaining processes on port 8000
     kill_port 8000
-    
-    # Kill muselsl processes
-    kill_processes "muselsl stream" "Muse LSL Stream"
     
     # Kill any Python processes running the main script
     kill_processes "integrated_mindshow_system.py" "MindShow Python Process"
@@ -93,11 +118,17 @@ main() {
     # Kill any uvicorn processes
     kill_processes "uvicorn" "Uvicorn Server"
     
+    # Kill any muselsl processes
+    kill_processes "muselsl stream" "Muse LSL Stream"
+    
     # Final cleanup - kill any remaining processes on port 8000
     if port_in_use 8000; then
         print_warning "Port 8000 is still in use, force killing..."
         lsof -ti :8000 | xargs kill -9 2>/dev/null || true
     fi
+    
+    # Clean up any remaining PID files
+    rm -f "$PID_FILE" "$MUSE_PID_FILE"
     
     print_success "🎉 MindShow system stopped successfully"
 }

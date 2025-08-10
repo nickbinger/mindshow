@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # MindShow Status Script
-# Shows the current state of all MindShow components
+# Shows the current status of all MindShow processes
 
 # Colors for output
 RED='\033[0;31m'
@@ -9,6 +9,11 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
+
+# Configuration
+PID_FILE="/tmp/mindshow_system.pid"
+MUSE_PID_FILE="/tmp/mindshow_muse.pid"
+LOG_FILE="/tmp/mindshow.log"
 
 # Function to print colored output
 print_status() {
@@ -37,43 +42,47 @@ process_running() {
     pgrep -f "$1" >/dev/null 2>&1
 }
 
-# Function to check if Muse LSL stream is running
-check_muse_stream() {
-    python3 -c "import pylsl; streams = pylsl.resolve_streams(); print(len([s for s in streams if 'Muse' in s.name()]))" 2>/dev/null || echo "0"
-}
-
-# Function to get process info
-get_process_info() {
-    local pattern=$1
-    if process_running "$pattern"; then
-        local pids=$(pgrep -f "$pattern")
-        echo "Running (PIDs: $pids)"
-    else
-        echo "Not running"
-    fi
-}
-
-# Function to get port info
-get_port_info() {
-    local port=$1
-    if port_in_use $port; then
-        local process=$(lsof -i :$port | grep LISTEN | head -1 | awk '{print $1}')
-        echo "In use by: $process"
-    else
-        echo "Available"
-    fi
-}
-
-# Function to check dashboard accessibility
-check_dashboard() {
-    if port_in_use 8000; then
-        if curl -s http://localhost:8000 >/dev/null 2>&1; then
-            echo "Accessible"
+# Function to check process by PID file
+check_pid_file() {
+    local pid_file=$1
+    local name=$2
+    
+    if [ -f "$pid_file" ]; then
+        local pid=$(cat "$pid_file")
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+            print_success "$name is running (PID: $pid)"
+            return 0
         else
-            echo "Port in use but not responding"
+            print_error "$name PID file exists but process is not running (PID: $pid)"
+            return 1
         fi
     else
-        echo "Not running"
+        print_warning "$name is not running (no PID file)"
+        return 1
+    fi
+}
+
+# Function to check Muse LSL stream
+check_muse_stream() {
+    local stream_count=$(python3 -c "import pylsl; streams = pylsl.resolve_streams(); print(len([s for s in streams if 'Muse' in s.name()]))" 2>/dev/null || echo "0")
+    if [ "$stream_count" -gt 0 ]; then
+        print_success "Muse LSL stream is available ($stream_count stream(s))"
+        return 0
+    else
+        print_warning "No Muse LSL streams found"
+        return 1
+    fi
+}
+
+# Function to show log tail
+show_log_tail() {
+    if [ -f "$LOG_FILE" ]; then
+        echo ""
+        print_status "Recent log entries:"
+        echo "===================="
+        tail -10 "$LOG_FILE" 2>/dev/null || print_warning "Could not read log file"
+    else
+        print_warning "No log file found"
     fi
 }
 
@@ -81,73 +90,86 @@ check_dashboard() {
 main() {
     echo "📊 MindShow Status Report"
     echo "========================="
-    echo ""
     
     # Check main system
-    print_status "Main System:"
-    if [ -f /tmp/mindshow_system.pid ]; then
-        local pid=$(cat /tmp/mindshow_system.pid)
-        if kill -0 $pid 2>/dev/null; then
-            print_success "Running (PID: $pid)"
-        else
-            print_error "PID file exists but process is dead"
-            rm -f /tmp/mindshow_system.pid
-        fi
+    echo ""
+    print_status "Checking MindShow System..."
+    if check_pid_file "$PID_FILE" "MindShow System"; then
+        SYSTEM_RUNNING=true
     else
-        print_warning "No PID file found"
+        SYSTEM_RUNNING=false
     fi
     
-    # Check Python process
-    print_status "Python Process:"
-    local python_status=$(get_process_info "integrated_mindshow_system.py")
-    if [[ $python_status == *"Running"* ]]; then
-        print_success "$python_status"
+    # Check Muse stream
+    echo ""
+    print_status "Checking Muse LSL Stream..."
+    if check_pid_file "$MUSE_PID_FILE" "Muse LSL Stream"; then
+        MUSE_RUNNING=true
     else
-        print_warning "$python_status"
+        MUSE_RUNNING=false
     fi
     
-    # Check Muse LSL stream
-    print_status "Muse LSL Stream:"
-    local muse_status=$(get_process_info "muselsl stream")
-    if [[ $muse_status == *"Running"* ]]; then
-        print_success "$muse_status"
+    # Check for any Muse streams
+    echo ""
+    print_status "Checking for Muse LSL streams..."
+    check_muse_stream
+    
+    # Check port 8000
+    echo ""
+    print_status "Checking Dashboard Port..."
+    if port_in_use 8000; then
+        print_success "Dashboard is accessible on port 8000"
+        print_status "URL: http://localhost:8000"
     else
-        print_warning "$muse_status"
+        print_error "Dashboard is not accessible on port 8000"
     fi
     
-    # Check if Muse stream is available
-    print_status "Muse Stream Available:"
-    local stream_count=$(check_muse_stream)
-    if [ "$stream_count" -gt 0 ]; then
-        print_success "Yes ($stream_count stream(s))"
-    else
-        print_warning "No streams detected"
+    # Check for any remaining processes
+    echo ""
+    print_status "Checking for any remaining MindShow processes..."
+    
+    local found_processes=false
+    
+    if process_running "integrated_mindshow_system.py"; then
+        print_warning "Found Python process running integrated_mindshow_system.py"
+        found_processes=true
     fi
     
-    # Check web server
-    print_status "Web Server (Port 8000):"
-    local port_status=$(get_port_info 8000)
-    if [[ $port_status == *"Available"* ]]; then
-        print_warning "$port_status"
-    else
-        print_success "$port_status"
+    if process_running "muselsl stream"; then
+        print_warning "Found muselsl stream process"
+        found_processes=true
     fi
     
-    # Check dashboard accessibility
-    print_status "Dashboard Accessibility:"
-    local dashboard_status=$(check_dashboard)
-    if [[ $dashboard_status == "Accessible" ]]; then
-        print_success "$dashboard_status"
+    if process_running "uvicorn"; then
+        print_warning "Found uvicorn server process"
+        found_processes=true
+    fi
+    
+    if [ "$found_processes" = false ]; then
+        print_success "No orphaned MindShow processes found"
+    fi
+    
+    # Show log tail
+    show_log_tail
+    
+    # Summary
+    echo ""
+    echo "📋 Summary:"
+    echo "==========="
+    if [ "$SYSTEM_RUNNING" = true ] && [ "$MUSE_RUNNING" = true ]; then
+        print_success "✅ MindShow system is fully operational"
+    elif [ "$SYSTEM_RUNNING" = true ]; then
+        print_warning "⚠️ MindShow system is running in demo mode (no Muse)"
     else
-        print_warning "$dashboard_status"
+        print_error "❌ MindShow system is not running"
     fi
     
     echo ""
-    print_status "Quick Commands:"
-    echo "  Start:   ./start_mindshow.sh"
-    echo "  Stop:    ./stop_mindshow.sh"
-    echo "  Status:  ./status_mindshow.sh"
-    echo "  Dashboard: http://localhost:8000"
+    print_status "Commands:"
+    print_status "  Start:   ./start_mindshow.sh"
+    print_status "  Stop:    ./stop_mindshow.sh"
+    print_status "  Status:  ./status_mindshow.sh"
+    print_status "  Logs:    tail -f $LOG_FILE"
 }
 
 # Run main function
