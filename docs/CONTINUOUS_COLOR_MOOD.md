@@ -121,3 +121,6 @@ This simulates varying brainwave data and shows smooth transitions through the c
 - **Multi-dimensional Mapping**: Include other EEG features (alpha, theta waves)
 - **Context Awareness**: Different mappings for meditation vs focus sessions
 - **Color Palette Modes**: Support different color schemes beyond warm-cool
+
+
+
