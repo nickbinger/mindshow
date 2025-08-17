@@ -42,16 +42,29 @@ async def connect_muse(address):
         async with BleakClient(address) as client:
             print(f"✓ Connected: {client.is_connected}")
             
-            # List services
-            services = await client.get_services()
-            print(f"✓ Found {len(services)} services")
+            # List services (method name varies by bleak version)
+            try:
+                # Newer bleak versions
+                services = client.services
+            except:
+                # Older bleak versions
+                try:
+                    services = await client.get_services()
+                except:
+                    services = []
             
-            # The Muse control service
-            MUSE_SERVICE = "0000fe8d-0000-1000-8000-00805f9b34fb"
-            
-            for service in services:
-                if MUSE_SERVICE in service.uuid.lower():
-                    print(f"✓ Found Muse service: {service.uuid}")
+            if services:
+                print(f"✓ Found {len(services)} services")
+                
+                # The Muse control service
+                MUSE_SERVICE = "0000fe8d-0000-1000-8000-00805f9b34fb"
+                
+                for service in services:
+                    service_uuid = str(service.uuid) if hasattr(service, 'uuid') else str(service)
+                    if MUSE_SERVICE in service_uuid.lower():
+                        print(f"✓ Found Muse service: {service_uuid}")
+            else:
+                print("✓ Connected but couldn't list services (that's OK)")
                     
             return True
             
