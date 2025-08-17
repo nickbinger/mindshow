@@ -19,14 +19,19 @@ async def scan():
     
     devices = await BleakScanner.discover(timeout=15.0)
     
-    # Sort by signal strength (RSSI)
-    devices = sorted(devices, key=lambda d: d.rssi if d.rssi else -100, reverse=True)
+    # Try to sort by signal strength if available
+    try:
+        devices = sorted(devices, key=lambda d: getattr(d, 'rssi', -100), reverse=True)
+    except:
+        pass  # Don't sort if RSSI not available
     
-    print(f"\nFound {len(devices)} devices (sorted by signal strength):\n")
+    print(f"\nFound {len(devices)} devices:\n")
     
     for i, device in enumerate(devices, 1):
         name = device.name if device.name else "[No Name]"
-        print(f"{i:2}. {device.address}  {name:30} (signal: {device.rssi} dBm)")
+        rssi = getattr(device, 'rssi', 'N/A')
+        rssi_str = f"(signal: {rssi} dBm)" if rssi != 'N/A' else ""
+        print(f"{i:2}. {device.address}  {name:30} {rssi_str}")
         
         # Highlight potential Muse devices
         if any(keyword in str(device).lower() for keyword in ['muse', '9190', 'interaxon']):
