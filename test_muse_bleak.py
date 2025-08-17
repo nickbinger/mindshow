@@ -54,15 +54,33 @@ async def connect_muse(address):
                     services = []
             
             if services:
-                print(f"✓ Found {len(services)} services")
+                # Count services (handle different types)
+                try:
+                    service_count = len(services)
+                except:
+                    service_count = len(list(services))
+                print(f"✓ Found {service_count} services")
                 
                 # The Muse control service
                 MUSE_SERVICE = "0000fe8d-0000-1000-8000-00805f9b34fb"
                 
-                for service in services:
-                    service_uuid = str(service.uuid) if hasattr(service, 'uuid') else str(service)
-                    if MUSE_SERVICE in service_uuid.lower():
-                        print(f"✓ Found Muse service: {service_uuid}")
+                # Iterate services (handle different structures)
+                found_muse_service = False
+                try:
+                    for service in services:
+                        service_uuid = str(service.uuid) if hasattr(service, 'uuid') else str(service)
+                        if MUSE_SERVICE in service_uuid.lower():
+                            print(f"✓ Found Muse service: {service_uuid}")
+                            found_muse_service = True
+                except:
+                    # Alternative iteration method
+                    for key in services:
+                        if MUSE_SERVICE in str(key).lower():
+                            print(f"✓ Found Muse service: {key}")
+                            found_muse_service = True
+                
+                if not found_muse_service:
+                    print("✓ Connected successfully (services found but Muse service not identified)")
             else:
                 print("✓ Connected but couldn't list services (that's OK)")
                     
