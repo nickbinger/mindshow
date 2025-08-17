@@ -29,9 +29,10 @@ else:
 # 3. Scan for devices
 print("\n3. Scanning for BLE devices (5 seconds)...")
 try:
-    result = subprocess.run(['timeout', '5', 'hcitool', 'lescan'], 
-                          capture_output=True, text=True, 
-                          stderr=subprocess.DEVNULL)
+    result = subprocess.run(['sudo', 'timeout', '5', 'hcitool', 'lescan'], 
+                          stdout=subprocess.PIPE, 
+                          stderr=subprocess.PIPE,
+                          text=True)
     lines = result.stdout.strip().split('\n')
     
     muse_found = False
