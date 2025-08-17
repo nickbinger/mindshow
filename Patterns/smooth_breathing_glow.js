@@ -1,23 +1,30 @@
 /*
-  Smooth Breathing Glow
+  Smooth Breathing Glow - Blue to Purple to Red
   
   An even gentler pattern that creates a breathing/pulsing effect
-  across the LED strip. Single color gradient from black to color.
+  across the LED strip. Color transitions from dark blue through purple to red.
   
   Designed for non-jarring, meditative visualization.
 */
 
-// Slider for color selection (0 = red, moving through spectrum)
-export var colorHue = 0  // Default to red
+// Slider for color transition (0 = dark blue, 0.5 = purple, 1 = red)
+export var colorBlend = 0  // Default to dark blue
 
-export function sliderColorHue(v) {
-  colorHue = v
+export function sliderColorBlend(v) {
+  colorBlend = v
 }
 
-// Very slow for breathing effect
-var breathSpeed = 0.02
+// Slider for breathing speed (0 = very slow, 1 = faster)
+export var speedControl = 0.2  // Default to slow
+
+export function sliderSpeedControl(v) {
+  speedControl = v
+}
 
 export function beforeRender(delta) {
+  // Map speed control to actual speed (0.005 = very slow, 0.1 = faster)
+  breathSpeed = 0.005 + speedControl * 0.095
+  
   // Single time base for unified breathing
   breathTime = time(breathSpeed)
   
@@ -41,6 +48,20 @@ export function render(index) {
   // This prevents white oversaturation and keeps it moody
   brightness = intensity * intensity * 0.6
   
+  // Map slider to color transition
+  // 0 = dark blue (hue ~0.6), 0.5 = purple (hue ~0.83), 1 = red (hue ~0)
+  if (colorBlend <= 0.5) {
+    // Transition from dark blue to purple
+    // Blue is at 0.6, purple is at 0.83
+    t = colorBlend * 2  // Map 0-0.5 to 0-1
+    hue = 0.6 + t * 0.23  // Interpolate from 0.6 to 0.83
+  } else {
+    // Transition from purple to red
+    // Purple is at 0.83, red is at 0 (or 1)
+    t = (colorBlend - 0.5) * 2  // Map 0.5-1 to 0-1
+    hue = 0.83 + t * 0.17  // Interpolate from 0.83 to 1 (which wraps to red)
+  }
+  
   // Pure color, no desaturation
-  hsv(colorHue, 1, brightness)
+  hsv(hue, 1, brightness)
 }
