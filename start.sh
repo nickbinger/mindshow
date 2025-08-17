@@ -29,14 +29,18 @@ echo -e "${BLUE}🧠 Starting MindShow${NC}"
 echo "===================="
 
 # Check for command line options
-if [[ "$1" == "--brainflow" ]] || [[ "$1" == "-b" ]]; then
-    echo "Using BrainFlow only (skipping LSL)"
-    export SKIP_LSL=1
+if [[ "$1" == "--lsl" ]] || [[ "$1" == "-l" ]]; then
+    echo "Using LSL mode (optional)"
+    export USE_LSL=1
 elif [[ "$1" == "--help" ]] || [[ "$1" == "-h" ]]; then
     echo "Usage: $0 [options]"
-    echo "  --brainflow, -b    Use BrainFlow only (skip LSL check)"
+    echo "  --lsl, -l          Use LSL instead of BrainFlow (default is BrainFlow)"
     echo "  --help, -h         Show this help"
+    echo ""
+    echo "Default: BrainFlow (works with Muse S)"
     exit 0
+else
+    echo "Using BrainFlow (default, works with your Muse)"
 fi
 
 # Kill any existing processes
