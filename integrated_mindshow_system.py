@@ -19,6 +19,7 @@ Features:
 import asyncio
 import json
 import logging
+import os
 import time
 import socket
 import threading
@@ -303,23 +304,41 @@ class IntegratedEEGProcessor:
         """Connect to EEG source with primary/fallback logic"""
         logger.info("🧠 Connecting to EEG source...")
         
-        # Try primary source (MuseLSL)
-        if self.config.eeg_source == "muselsl" or self.config.eeg_source == "auto":
+        # Check for environment variable to skip LSL
+        skip_lsl = os.environ.get('SKIP_LSL', '').lower() in ['1', 'true', 'yes']
+        use_brainflow_first = os.environ.get('USE_BRAINFLOW_FIRST', '').lower() in ['1', 'true', 'yes']
+        
+        if skip_lsl:
+            logger.info("Skipping LSL (SKIP_LSL=1)")
+        
+        if use_brainflow_first or skip_lsl:
+            # Try BrainFlow first if requested
+            if self.config.eeg_source == "brainflow" or self.config.eeg_source == "auto":
+                self.fallback_processor = BrainFlowProcessor(self.config)
+                if self.fallback_processor.connect():
+                    self.current_source = "brainflow"
+                    self.connected = True
+                    logger.info("✅ Connected via BrainFlow (primary)")
+                    return True
+        
+        # Try MuseLSL if not skipped
+        if not skip_lsl and (self.config.eeg_source == "muselsl" or self.config.eeg_source == "auto"):
             self.primary_processor = MuseLSLProcessor(self.config)
             if self.primary_processor.connect():
                 self.current_source = "muselsl"
                 self.connected = True
-                logger.info("✅ Connected via MuseLSL (primary)")
+                logger.info("✅ Connected via MuseLSL")
                 return True
         
-        # Fallback to BrainFlow
-        if self.config.eeg_source == "brainflow" or self.config.eeg_source == "auto":
-            self.fallback_processor = BrainFlowProcessor(self.config)
-            if self.fallback_processor.connect():
-                self.current_source = "brainflow"
-                self.connected = True
-                logger.info("✅ Connected via BrainFlow (fallback)")
-                return True
+        # Try BrainFlow as fallback if not already tried
+        if not use_brainflow_first and not skip_lsl:
+            if self.config.eeg_source == "brainflow" or self.config.eeg_source == "auto":
+                self.fallback_processor = BrainFlowProcessor(self.config)
+                if self.fallback_processor.connect():
+                    self.current_source = "brainflow"
+                    self.connected = True
+                    logger.info("✅ Connected via BrainFlow (fallback)")
+                    return True
         
         logger.error("❌ Failed to connect to any EEG source")
         return False
