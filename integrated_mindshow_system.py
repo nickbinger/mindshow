@@ -38,6 +38,14 @@ from fastapi.staticfiles import StaticFiles
 import uvicorn
 from loguru import logger
 
+# OSC Support
+try:
+    from pythonosc import udp_client
+    OSC_AVAILABLE = True
+except ImportError:
+    OSC_AVAILABLE = False
+    logger.warning("pythonosc not available - OSC sending disabled")
+
 # EEG Processing Imports
 try:
     import pylsl  # MuseLSL primary
@@ -205,26 +213,46 @@ class MuseLSLProcessor:
             return {'delta': 0, 'theta': 0, 'alpha': 0, 'beta': 0, 'gamma': 0}
 
 class BrainFlowProcessor:
-    """BrainFlow processor for advanced EEG features"""
+    """BrainFlow processor with automatic reconnection daemon"""
     
     def __init__(self, config: MindShowConfig):
         self.config = config
         self.board = None
         self.connected = False
+        self.last_connect_attempt = 0
+        self.connect_retry_delay = 5  # Start with 5 second retry
+        self.max_retry_delay = 60  # Max 60 seconds between retries
+        self.consecutive_failures = 0
+        self.last_data_time = None
+        self.connection_thread = None
+        self.daemon_active = True
         
-    def connect(self) -> bool:
-        """Connect to Muse via BrainFlow"""
+    def _disconnect_safely(self):
+        """Safely disconnect from the board"""
+        if self.board:
+            try:
+                if self.board.is_prepared():
+                    self.board.stop_stream()
+                    self.board.release_session()
+            except:
+                pass
+            self.board = None
+        self.connected = False
+
+    def _attempt_connection(self) -> bool:
+        """Single connection attempt to Muse via BrainFlow"""
         if not BRAINFLOW_AVAILABLE:
             logger.error("BrainFlow not available")
             return False
             
         try:
-            logger.info("Connecting to Muse via BrainFlow...")
+            # Clean up any existing connection first
+            self._disconnect_safely()
+            
+            logger.info("🔌 Attempting to connect to Muse...")
             
             # Configure BrainFlow parameters
-            BoardShim.enable_dev_board_logger()
             params = BrainFlowInputParams()
-            # Don't specify MAC address - let BrainFlow find the Muse automatically
             params.serial_port = ''  # Empty for Bluetooth
             params.timeout = 15
             
@@ -235,15 +263,97 @@ class BrainFlowProcessor:
             
             # Wait for data to start flowing
             time.sleep(2)
-            self.connected = True
-            logger.info("✅ Connected to Muse via BrainFlow")
-            return True
+            
+            # Verify we're getting data
+            test_data = self.board.get_current_board_data(10)
+            if test_data.shape[1] > 0:
+                self.connected = True
+                self.last_data_time = time.time()
+                self.consecutive_failures = 0
+                self.connect_retry_delay = 5  # Reset retry delay
+                logger.info("✅ Connected to Muse via BrainFlow")
+                return True
+            else:
+                raise Exception("No data received from device")
             
         except Exception as e:
-            logger.error(f"Failed to connect via BrainFlow: {e}")
-            import traceback
-            logger.error(f"Traceback: {traceback.format_exc()}")
+            logger.warning(f"Connection attempt failed: {e}")
+            self._disconnect_safely()
             return False
+
+    def _connection_daemon(self):
+        """Background thread that maintains connection"""
+        logger.info("🔄 Starting connection daemon...")
+        
+        while self.daemon_active:
+            try:
+                current_time = time.time()
+                
+                # If not connected, try to connect with backoff
+                if not self.connected:
+                    if current_time - self.last_connect_attempt >= self.connect_retry_delay:
+                        self.last_connect_attempt = current_time
+                        
+                        if self._attempt_connection():
+                            logger.info("🎉 Muse reconnected successfully! Brainwave control active")
+                        else:
+                            self.consecutive_failures += 1
+                            # Exponential backoff with max delay
+                            self.connect_retry_delay = min(
+                                self.connect_retry_delay * 1.5,
+                                self.max_retry_delay
+                            )
+                            if self.consecutive_failures == 1:
+                                logger.info(f"🔍 Muse not found - daemon searching (retry in {self.connect_retry_delay:.0f}s)")
+                            elif self.consecutive_failures % 5 == 0:
+                                logger.info(f"🔄 Still searching for Muse... (attempt #{self.consecutive_failures}, next in {self.connect_retry_delay:.0f}s)")
+                
+                # If connected, check connection health
+                elif self.connected and self.board:
+                    # Check if we're still getting data
+                    if self.last_data_time and (current_time - self.last_data_time > 10):
+                        logger.warning("⚠️ No data received for 10 seconds, reconnecting...")
+                        self._disconnect_safely()
+                        self.connected = False
+                
+                # Sleep briefly to avoid busy waiting
+                time.sleep(1)
+                
+            except Exception as e:
+                logger.error(f"Connection daemon error: {e}")
+                time.sleep(5)
+        
+        logger.info("Connection daemon stopped")
+
+    def connect(self) -> bool:
+        """Start connection daemon and attempt initial connection"""
+        # Start the connection daemon if not already running
+        if not self.connection_thread or not self.connection_thread.is_alive():
+            self.daemon_active = True
+            self.connection_thread = threading.Thread(
+                target=self._connection_daemon,
+                daemon=True,
+                name="MuseConnectionDaemon"
+            )
+            self.connection_thread.start()
+            
+        # Wait for initial connection (up to 20 seconds)
+        start_time = time.time()
+        while time.time() - start_time < 20:
+            if self.connected:
+                return True
+            time.sleep(0.5)
+        
+        # Don't stop daemon, just return False for initial attempt
+        logger.warning("Initial connection timed out, but daemon will keep trying...")
+        return False
+    
+    def stop_daemon(self):
+        """Stop the connection daemon"""
+        self.daemon_active = False
+        if self.connection_thread:
+            self.connection_thread.join(timeout=5)
+        self._disconnect_safely()
     
     def get_data(self) -> Optional[Dict[str, Any]]:
         """Get EEG data from BrainFlow"""
@@ -255,6 +365,9 @@ class BrainFlowProcessor:
             data = self.board.get_current_board_data(256)
             if data.shape[1] == 0:
                 return None
+            
+            # Update last data time for connection monitoring
+            self.last_data_time = time.time()
                 
             # Get EEG channels and sampling rate
             eeg_channels = BoardShim.get_eeg_channels(BoardIds.MUSE_2_BOARD.value)
@@ -345,11 +458,15 @@ class IntegratedEEGProcessor:
     
     def get_brain_state(self) -> Optional[Dict[str, Any]]:
         """Get current brain state with stability logic"""
+        # Check if processor is connected (daemon may have reconnected)
+        processor = self.primary_processor if self.current_source == "muselsl" else self.fallback_processor
+        
+        if processor and hasattr(processor, 'connected'):
+            self.connected = processor.connected
+        
         if not self.connected:
             return None
         
-        # Get data from active processor
-        processor = self.primary_processor if self.current_source == "muselsl" else self.fallback_processor
         raw_data = processor.get_data()
         
         if not raw_data:
@@ -520,13 +637,19 @@ class IntegratedEEGProcessor:
                 return 0.5  # Neutral fallback
     
     def disconnect(self):
-        """Disconnect from EEG source"""
+        """Disconnect from EEG source and stop connection daemon"""
+        # Stop the connection daemon if using BrainFlow
+        if self.fallback_processor and hasattr(self.fallback_processor, 'stop_daemon'):
+            self.fallback_processor.stop_daemon()
+        
+        # Legacy cleanup for old BrainFlow connection
         if self.fallback_processor and hasattr(self.fallback_processor, 'board') and self.fallback_processor.board:
             try:
                 self.fallback_processor.board.stop_stream()
                 self.fallback_processor.board.release_session()
             except:
                 pass
+        
         self.connected = False
 
 # =============================================================================
@@ -840,6 +963,16 @@ class MultiPixelblazeController:
         
         # Round for transmission
         final_color_mood = round(smoothed_color_mood, 3)
+        
+        # Send OSC to LX MindshowEffect (if we have access to the client)
+        # Note: This is in MultiPixelblazeController, need to pass through from main system
+        if hasattr(self, 'osc_client') and self.osc_client:
+            try:
+                self.osc_client.send_message("/lx/mixer/master/effect/5/colorBlend", final_color_mood)
+                self.osc_client.send_message("/lx/mixer/master/effect/5/speed", intensity)
+                logger.debug(f"🎵 OSC auto-sent to LX: colorBlend={final_color_mood:.3f}, speed={intensity:.3f}")
+            except Exception as e:
+                logger.warning(f"Failed to send OSC: {e}")
         
         # Check if brain state changed for pattern switching
         state_changed = brain_state != self.last_brain_state
@@ -1997,6 +2130,18 @@ class MindShowIntegratedSystem:
         self.pixelblaze_controller = MultiPixelblazeController(config)
         self.dashboard = MindShowDashboard()
         
+        # Initialize OSC client for sending to LX
+        self.osc_client = None
+        if OSC_AVAILABLE:
+            try:
+                # Default to localhost port 7000 (standard LX OSC port)
+                self.osc_client = udp_client.SimpleUDPClient("127.0.0.1", 7000)
+                logger.info("🎵 OSC client initialized for LX communication")
+                # Pass OSC client to the controller for automatic brain state updates
+                self.pixelblaze_controller.osc_client = self.osc_client
+            except Exception as e:
+                logger.warning(f"Failed to initialize OSC client: {e}")
+        
         # Connect dashboard to main system for API calls
         self.dashboard.main_system = self
         
@@ -2036,6 +2181,18 @@ class MindShowIntegratedSystem:
                 'sliderColorBlend': color_mood,
                 'intensity': intensity
             }
+            
+            # Send OSC to LX MindshowEffect
+            if self.osc_client:
+                try:
+                    # Send to the MindshowEffect colorBlend parameter
+                    self.osc_client.send_message("/lx/mixer/master/effect/5/colorBlend", color_mood)
+                    # Also send speed if we want to control pulsing intensity
+                    # Map intensity (0-1) to speed parameter (0-1)
+                    self.osc_client.send_message("/lx/mixer/master/effect/5/speed", intensity)
+                    logger.debug(f"🎵 OSC sent to LX: colorBlend={color_mood:.3f}, speed={intensity:.3f}")
+                except Exception as e:
+                    logger.warning(f"Failed to send OSC: {e}")
             
             # Update all connected devices with variables only (no pattern switch)
             update_tasks = []
@@ -2205,11 +2362,12 @@ class MindShowIntegratedSystem:
         """Start the integrated system"""
         logger.info("🚀 Starting MindShow Integrated System")
         
-        # Connect EEG
+        # Connect EEG with daemon mode
         eeg_connected = self.eeg_processor.connect()
         if not eeg_connected:
-            logger.warning("⚠️  No EEG source available - starting in demo mode")
-            logger.info("💡 Connect your Muse headband and restart to enable brainwave control")
+            logger.warning("⚠️  Muse not connected yet - daemon will keep trying in background")
+            logger.info("🔄 Connection daemon active - will automatically connect when Muse is available")
+            logger.info("💡 Turn on your Muse headband with Bluetooth enabled")
         
         # Discover and connect Pixelblaze devices with retry logic
         connected_devices = 0
@@ -2239,11 +2397,17 @@ class MindShowIntegratedSystem:
         
         self.running = True
         logger.info("✅ MindShow Integrated System started successfully!")
+        logger.info("="*60)
+        logger.info("🌐 Web Dashboard: http://localhost:8000")
+        logger.info("🔄 Muse Connection: Daemon actively searching...")
+        logger.info(f"🎨 Pixelblaze: {connected_devices} controller(s) connected")
+        logger.info("="*60)
         
         if eeg_connected:
             logger.info("🧠 Brainwave control enabled")
         else:
-            logger.info("🎭 Demo mode - dashboard available for testing")
+            logger.info("🔍 Waiting for Muse headband (daemon will auto-connect)")
+            logger.info("🎭 Demo mode active - dashboard available for testing")
         
         try:
             await asyncio.gather(dashboard_task, processing_task)
@@ -2270,9 +2434,19 @@ class MindShowIntegratedSystem:
         logger.info("🔄 Starting processing loop...")
         update_interval = 1.0 / self.config.update_rate
         
+        last_status_log = 0
+        
         while self.running:
             try:
                 start_time = time.time()
+                
+                # Log connection status periodically
+                if time.time() - last_status_log > 30:
+                    if self.eeg_processor.connected:
+                        logger.info("✅ Muse connected and streaming")
+                    else:
+                        logger.info("🔍 Waiting for Muse connection...")
+                    last_status_log = time.time()
                 
                 # Get brain state
                 brain_data = self.eeg_processor.get_brain_state()

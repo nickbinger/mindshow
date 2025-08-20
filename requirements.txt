@@ -19,6 +19,9 @@ brainflow>=5.11.0
 # Pixelblaze WebSocket control
 websocket-client>=1.6.4
 
+# OSC communication with LX/Chromatik
+python-osc>=1.8.0
+
 # Optional - for Pi GPIO/hardware integration (Phase 4)
 # RPi.GPIO>=0.7.1  # Uncomment when deploying to Pi
 
