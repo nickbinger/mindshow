@@ -1475,15 +1475,16 @@ class MindShowDashboard:
                     </div>
                 </div>
                 
-                <!-- Phase 4b: Color Mood Visualization -->
+                <!-- Phase 4b: Color Mood Visualization - Now Interactive! -->
                 <div class="metrics">
                     <div class="metric color-mood-display">
-                        <h3>🎨 Color Mood</h3>
+                        <h3>🎨 Color Mood <span style="font-size: 12px; opacity: 0.7">(Click & drag to control)</span></h3>
                         <div id="color-mood-value" class="metric-value">0.500</div>
-                        <div id="color-mood-bar" class="color-mood-bar">
+                        <div id="color-mood-bar" class="color-mood-bar" style="cursor: pointer;">
                             <div id="color-mood-indicator" class="color-mood-indicator"></div>
                         </div>
                         <div id="color-mood-description" class="color-mood-description">Neutral</div>
+                        <div id="color-mood-control-status" style="margin-top: 5px; font-size: 11px; opacity: 0.8;"></div>
                     </div>
                     <div class="metric">
                         <h3>🔬 Engagement Level</h3>
@@ -1871,7 +1872,7 @@ class MindShowDashboard:
                     }
                 }
                 
-                // Manual Mood Control
+                // Manual Mood Control - Enhanced with realtime updates
                 function setupManualMoodControl() {
                     const moodSlider = document.getElementById('manual-mood-slider');
                     const moodValue = document.getElementById('manual-mood-value');
@@ -1880,9 +1881,43 @@ class MindShowDashboard:
                     const sendButton = document.getElementById('send-manual-mood');
                     const statusDiv = document.getElementById('manual-mood-status');
                     
+                    // Add flag to track manual control mode
+                    let manualModeActive = false;
+                    let lastSentMood = 0.5;
+                    let sendTimeout = null;
+                    
+                    // Auto-send when mood slider changes (realtime control)
                     moodSlider.addEventListener('input', (e) => {
                         const value = parseFloat(e.target.value);
                         moodValue.textContent = value.toFixed(2);
+                        manualModeActive = true;
+                        
+                        // Clear existing timeout
+                        if (sendTimeout) clearTimeout(sendTimeout);
+                        
+                        // Debounce updates to avoid overwhelming the system
+                        sendTimeout = setTimeout(() => {
+                            if (Math.abs(value - lastSentMood) > 0.01) {
+                                lastSentMood = value;
+                                const intensityVal = parseFloat(intensitySlider.value);
+                                sendManualMoodQuiet(value, intensityVal); // Send without button feedback
+                                statusDiv.textContent = `🎮 Live control: ${value.toFixed(2)}`;
+                                statusDiv.style.color = '#4ecdc4';
+                            }
+                        }, 50); // 50ms debounce
+                    });
+                    
+                    // Enable manual mode when user first touches the slider
+                    moodSlider.addEventListener('mousedown', () => {
+                        manualModeActive = true;
+                        statusDiv.textContent = '🎮 Manual control activated - move slider to control';
+                        statusDiv.style.color = '#4ecdc4';
+                    });
+                    
+                    moodSlider.addEventListener('touchstart', () => {
+                        manualModeActive = true;
+                        statusDiv.textContent = '🎮 Manual control activated - move slider to control';
+                        statusDiv.style.color = '#4ecdc4';
                     });
                     
                     intensitySlider.addEventListener('input', (e) => {
@@ -1898,6 +1933,24 @@ class MindShowDashboard:
                         
                         sendManualMood(moodValue, intensityValue);
                     });
+                    
+                    // Quiet version for realtime updates (no status messages)
+                    function sendManualMoodQuiet(mood, intensity) {
+                        fetch('/api/manual_mood', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({
+                                color_mood: mood,
+                                intensity: intensity,
+                                realtime: true  // Flag for realtime mode
+                            })
+                        })
+                        .catch(error => {
+                            console.error('Manual mood error:', error);
+                        });
+                    }
                 }
                 
                 function sendIntensityOnly(intensity) {
@@ -2103,11 +2156,105 @@ class MindShowDashboard:
                     window.updateDeviceSelector = updateDeviceSelector;
                 }
                 
-                // Initialize sliders when page loads
+                // Make the main Color Mood bar interactive
+                function setupMainColorMoodControl() {
+                    const colorMoodBar = document.getElementById('color-mood-bar');
+                    const colorMoodIndicator = document.getElementById('color-mood-indicator');
+                    const colorMoodValue = document.getElementById('color-mood-value');
+                    const colorMoodStatus = document.getElementById('color-mood-control-status');
+                    const manualMoodSlider = document.getElementById('manual-mood-slider');
+                    const manualMoodValue = document.getElementById('manual-mood-value');
+                    
+                    let isDragging = false;
+                    let manualOverride = false;
+                    
+                    function updateMoodFromPosition(clientX) {
+                        const rect = colorMoodBar.getBoundingClientRect();
+                        const x = clientX - rect.left;
+                        const width = rect.width;
+                        let value = x / width;
+                        value = Math.max(0, Math.min(1, value));
+                        
+                        // Update display immediately
+                        colorMoodValue.textContent = value.toFixed(3);
+                        colorMoodIndicator.style.left = `calc(${value * 100}% - 2px)`;
+                        
+                        // Sync with manual slider
+                        manualMoodSlider.value = value;
+                        manualMoodValue.textContent = value.toFixed(2);
+                        
+                        // Send to system
+                        const intensityVal = parseFloat(document.getElementById('manual-intensity-slider').value);
+                        fetch('/api/manual_mood', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({
+                                color_mood: value,
+                                intensity: intensityVal,
+                                realtime: true
+                            })
+                        });
+                        
+                        // Update description
+                        const description = document.getElementById('color-mood-description');
+                        if (value < 0.3) {
+                            description.textContent = '🔥 Warm (Engaged/Focus)';
+                        } else if (value > 0.7) {
+                            description.textContent = '❄️ Cool (Relaxed/Calm)';
+                        } else {
+                            description.textContent = '🌈 Neutral (Balanced)';
+                        }
+                        
+                        colorMoodStatus.textContent = '🎮 Manual control active';
+                        manualOverride = true;
+                    }
+                    
+                    colorMoodBar.addEventListener('mousedown', (e) => {
+                        isDragging = true;
+                        updateMoodFromPosition(e.clientX);
+                        e.preventDefault();
+                    });
+                    
+                    document.addEventListener('mousemove', (e) => {
+                        if (isDragging) {
+                            updateMoodFromPosition(e.clientX);
+                        }
+                    });
+                    
+                    document.addEventListener('mouseup', () => {
+                        if (isDragging) {
+                            isDragging = false;
+                            colorMoodStatus.textContent = '✓ Manual value set';
+                        }
+                    });
+                    
+                    // Touch support
+                    colorMoodBar.addEventListener('touchstart', (e) => {
+                        isDragging = true;
+                        updateMoodFromPosition(e.touches[0].clientX);
+                        e.preventDefault();
+                    });
+                    
+                    document.addEventListener('touchmove', (e) => {
+                        if (isDragging) {
+                            updateMoodFromPosition(e.touches[0].clientX);
+                        }
+                    });
+                    
+                    document.addEventListener('touchend', () => {
+                        if (isDragging) {
+                            isDragging = false;
+                            colorMoodStatus.textContent = '✓ Manual value set';
+                        }
+                    });
+                }
+                
+                // Initialize all controls when page loads
                 document.addEventListener('DOMContentLoaded', () => {
                     setupSliders();
                     setupManualMoodControl();
                     setupPatternSelector();
+                    setupMainColorMoodControl();  // Add the new interactive control
                 });
             </script>
         </body>
@@ -2134,9 +2281,9 @@ class MindShowIntegratedSystem:
         self.osc_client = None
         if OSC_AVAILABLE:
             try:
-                # Default to localhost port 7000 (standard LX OSC port)
-                self.osc_client = udp_client.SimpleUDPClient("127.0.0.1", 7000)
-                logger.info("🎵 OSC client initialized for LX communication")
+                # LX OSC port for MindShow setup
+                self.osc_client = udp_client.SimpleUDPClient("127.0.0.1", 3232)
+                logger.info("🎵 OSC client initialized for LX communication on port 3232")
                 # Pass OSC client to the controller for automatic brain state updates
                 self.pixelblaze_controller.osc_client = self.osc_client
             except Exception as e:

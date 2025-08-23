@@ -103,6 +103,7 @@ The MindShow system transforms brainwaves into LED patterns through a multi-comp
 - **Pixelblaze IP**: 192.168.0.241 (hardcoded in current implementation)
 - **Dashboard Port**: 8000
 - **WebSocket Port**: 81 (Pixelblaze)
+- **OSC Port**: 3232 (LX control - IMPORTANT: Not 7000!)
 
 ### Known Issues & Solutions
 - **Pattern Flickering**: Resolved with variable update throttling
