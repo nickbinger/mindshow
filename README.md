@@ -118,16 +118,26 @@ cd mindshow
 uv sync
 ```
 
-### Running the Stable System
+### **Dec 2025: Recommended Startup**
 ```bash
-# Start the research-based stable system
-python3 stable_unified_system.py
+# 1. Turn on Muse S Gen 2 (LED blinking = pairing mode)
+# 2. Run in foreground:
+source .venv/bin/activate
+export DYLD_LIBRARY_PATH=/opt/homebrew/lib
+python integrated_mindshow_system.py
+
+# Dashboard: http://localhost:8000
+# Stop: Ctrl+C
 ```
 
-This will launch:
-- **Web Dashboard**: http://localhost:8000
-- **GUI Window**: Real-time brain state display
-- **LED Control**: Automatic color changes based on brain states
+### Alternative: Background/Daemon Mode
+```bash
+# Hides processes in background
+./start_mindshow.sh
+
+# Stop
+./stop_mindshow.sh
+```
 
 ### Muse Setup
 1. Turn on your Muse S Gen 2 headband

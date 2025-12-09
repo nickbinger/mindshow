@@ -4,9 +4,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Commands
 
-### System Control
+### **Dec 2025: Recommended Startup (Foreground)**
 ```bash
-# Start the complete MindShow system (daemon mode)
+# Run in foreground for visibility (recommended for development)
+source .venv/bin/activate
+export DYLD_LIBRARY_PATH=/opt/homebrew/lib
+python integrated_mindshow_system.py
+
+# Requirements:
+# - Muse S Gen 2 powered on and in pairing mode (LED blinking)
+# - Bluetooth enabled
+# - Dashboard at http://localhost:8000
+# - Ctrl+C to kill
+```
+
+### System Control (Background/Daemon Mode)
+```bash
+# Start the complete MindShow system (daemon mode - hides processes)
 ./start_mindshow.sh
 
 # Stop all MindShow processes
