@@ -179,6 +179,26 @@ class MuseLSLProcessor:
             logger.error(f"Error getting LSL data: {e}")
             return None
     
+    """
+
+    IMPORTANT... sigh... Dec 2025... this was here:
+    - it was faking it, largely? for smoothness?
+    - worse... it's reminding me there's BlueStream, there's Muse "LDL"... should we be doing our own fft
+        bull shit?? that may have been buried with all the Pi Zero struggles?
+
+            # Simple band power calculation - just use raw values for now
+            # We're getting real data, that's what matters!
+            band_powers = {
+                'delta': np.random.uniform(0.1, 1.0),  # Placeholder
+                'theta': np.random.uniform(0.1, 1.0),  # Placeholder  
+                'alpha': np.random.uniform(0.5, 2.0),  # Higher for relaxation
+                'beta': np.random.uniform(0.5, 2.0),   # Higher for attention
+                'gamma': np.random.uniform(0.1, 0.5)   # Usually lower
+            }
+
+    """
+
+
     def _calculate_band_powers(self, eeg_data: np.ndarray, sample_rate: int) -> Dict[str, float]:
         """Calculate brainwave band powers"""
         try:
@@ -373,16 +393,12 @@ class BrainFlowProcessor:
             eeg_channels = BoardShim.get_eeg_channels(BoardIds.MUSE_2_BOARD.value)
             if not eeg_channels:
                 return None
-                
-            # Simple band power calculation - just use raw values for now
-            # We're getting real data, that's what matters!
-            band_powers = {
-                'delta': np.random.uniform(0.1, 1.0),  # Placeholder
-                'theta': np.random.uniform(0.1, 1.0),  # Placeholder  
-                'alpha': np.random.uniform(0.5, 2.0),  # Higher for relaxation
-                'beta': np.random.uniform(0.5, 2.0),   # Higher for attention
-                'gamma': np.random.uniform(0.1, 0.5)   # Usually lower
-            }
+
+            # Extract EEG data from channels
+            eeg_data = data[eeg_channels, :]
+
+            # Calculate REAL band powers using FFT (same as MuseLSL path)
+            band_powers = self._calculate_band_powers(eeg_data, self.config.sample_rate)
             
             return {
                 'timestamp': datetime.now().isoformat(),
@@ -394,6 +410,39 @@ class BrainFlowProcessor:
         except Exception as e:
             logger.error(f"Error getting BrainFlow data: {e}")
             return None
+
+    def _calculate_band_powers(self, eeg_data: np.ndarray, sample_rate: int) -> Dict[str, float]:
+        """Calculate brainwave band powers using FFT (same algorithm as MuseLSL)"""
+        try:
+            # Average across channels
+            avg_channel = np.mean(eeg_data, axis=0)
+
+            # Apply FFT
+            fft_vals = np.fft.rfft(avg_channel)
+            fft_freqs = np.fft.rfftfreq(len(avg_channel), 1/sample_rate)
+            psd = np.abs(fft_vals) ** 2
+
+            # Define frequency bands
+            bands = {
+                'delta': (0.5, 4.0),
+                'theta': (4.0, 8.0),
+                'alpha': (8.0, 13.0),
+                'beta': (13.0, 30.0),
+                'gamma': (30.0, 50.0)
+            }
+
+            # Calculate band powers
+            band_powers = {}
+            for band_name, (low_freq, high_freq) in bands.items():
+                band_mask = (fft_freqs >= low_freq) & (fft_freqs <= high_freq)
+                band_power = float(np.mean(psd[band_mask]))
+                band_powers[band_name] = band_power
+
+            return band_powers
+
+        except Exception as e:
+            logger.error(f"Error calculating band powers: {e}")
+            return {'delta': 0, 'theta': 0, 'alpha': 0, 'beta': 0, 'gamma': 0}
 
 class IntegratedEEGProcessor:
     """Integrated EEG processor with MuseLSL primary, BrainFlow fallback"""
