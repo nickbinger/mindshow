@@ -43,6 +43,14 @@ A real-time brainwave visualization system that controls LED patterns based on y
 - 🔄 **Extended Testing**: Long-term stability verification
 - 🔄 **User Experience**: Final polish and optimization
 
+### 🔍 **Phase 5: Firestorm Integration Evaluation** - IN PROGRESS
+- ✅ **Code Acquisition**: Firestorm repository cloned and organized in `external/firestorm/`
+- ✅ **Documentation Review**: Comprehensive analysis of Firestorm architecture and features
+- 🔄 **Integration Planning**: Evaluate UDP discovery mechanism for automatic device detection
+- 🔄 **Implementation Decision**: Determine integration scope (discovery, time sync, or hybrid approach)
+- ⏳ **Python Porting**: Port key features from Node.js to Python (if integration approved)
+- ⏳ **Testing**: Validate automatic discovery with MindShow system
+
 ## 🎪 Burning Man Ready Features
 
 ### **✅ Hardware Integration**
@@ -135,11 +143,22 @@ tail -f /tmp/mindshow.log
 3. **Test extended operation** for long-term stability
 4. **Optimize color mood sensitivity** for ideal visual experience
 
+### **Firestorm Integration Evaluation** (New Phase)
+1. **Code Review**: Analyze Firestorm's UDP discovery implementation (`external/firestorm/app/discovery.js`)
+2. **Integration Design**: Plan Python port of UDP discovery mechanism
+3. **Decision Point**: Determine integration scope:
+   - **Option A**: Full integration (discovery + time sync)
+   - **Option B**: Discovery only (recommended for Burning Man)
+   - **Option C**: Hybrid approach (use Firestorm as service alongside MindShow)
+4. **Implementation**: Port UDP discovery to Python and integrate with `MultiPixelblazeController`
+5. **Testing**: Validate automatic device detection on startup
+
 ### **Final Preparation**
 1. **Performance testing** under various conditions
 2. **User experience optimization** for Burning Man environment
 3. **Documentation review** and final updates
 4. **Deployment testing** on target hardware
+5. **Multi-device testing** (if Firestorm integration approved)
 
 ## 🎉 Project Status
 

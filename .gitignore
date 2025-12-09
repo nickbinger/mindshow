@@ -58,4 +58,9 @@ Thumbs.db
 .ipynb_checkpoints
 
 # pyenv
-.python-version 
+.python-version
+
+# Firestorm (external reference code)
+external/firestorm/node_modules/
+external/firestorm/build/
+external/firestorm/.yarn/ 
