@@ -222,25 +222,6 @@ class MuseLSLProcessor:
             logger.error(f"Error getting LSL data: {e}")
             return None
     
-    """
-
-    IMPORTANT... sigh... Dec 2025... this was here:
-    - it was faking it, largely? for smoothness?
-    - worse... it's reminding me there's BlueStream, there's Muse "LDL"... should we be doing our own fft
-        bull shit?? that may have been buried with all the Pi Zero struggles?
-
-            # Simple band power calculation - just use raw values for now
-            # We're getting real data, that's what matters!
-            band_powers = {
-                'delta': np.random.uniform(0.1, 1.0),  # Placeholder
-                'theta': np.random.uniform(0.1, 1.0),  # Placeholder  
-                'alpha': np.random.uniform(0.5, 2.0),  # Higher for relaxation
-                'beta': np.random.uniform(0.5, 2.0),   # Higher for attention
-                'gamma': np.random.uniform(0.1, 0.5)   # Usually lower
-            }
-
-    """
-
 
     def _calculate_band_powers(self, eeg_data: np.ndarray, sample_rate: int) -> Dict[str, float]:
         """Calculate brainwave band powers using shared FFT function"""
