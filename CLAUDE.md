@@ -21,7 +21,7 @@ python integrated_mindshow_system.py
 ### System Control (Background/Daemon Mode)
 ```bash
 # Start the complete MindShow system (daemon mode - hides processes)
-./start_mindshow.sh
+./start_mindshow_venv.sh
 
 # Stop all MindShow processes
 ./stop_mindshow.sh
@@ -35,20 +35,14 @@ tail -f /tmp/mindshow.log
 
 ### Development & Testing
 ```bash
-# Test Muse connection
-python3 test_muse_discovery.py
+# Run unit tests
+pytest tests/
 
-# Test LED control
-python3 test_pb_only.py
-
-# Analyze brainwave thresholds
-python3 research_thresholds.py
-
-# Test the stable unified system
-python3 stable_unified_system.py
-
-# Test dashboard data
+# Test dashboard WebSocket data
 python3 test_dashboard_data.py
+
+# Test Pixelblaze color mood control (requires hardware)
+python3 test_phase4b_color_mood.py
 
 # Install dependencies with uv
 uv sync
@@ -100,8 +94,8 @@ The MindShow system transforms brainwaves into LED patterns through a multi-comp
 
 ### Critical Files
 - **Configuration**: `config/config.py` - System parameters and thresholds
-- **Startup/Shutdown**: `start_mindshow.sh`, `stop_mindshow.sh` - Process management
-- **Pattern Files**: `pixelblaze_patterns/` - JavaScript patterns for Pixelblaze
+- **Startup/Shutdown**: `start_mindshow_venv.sh`, `stop_mindshow.sh` - Process management
+- **Pattern Files**: `Patterns/` - JavaScript patterns for Pixelblaze
 - **Research Docs**: `deep_research/` - Implementation guides and phase documentation
 
 ## Important Context
