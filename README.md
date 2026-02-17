@@ -44,7 +44,7 @@ python integrated_mindshow_system.py
 
 ### Alternative: Background/Daemon Mode
 ```bash
-./start_mindshow.sh   # Start
+./start_mindshow_venv.sh   # Start
 ./stop_mindshow.sh    # Stop
 ./status_mindshow.sh  # Check status
 ```
@@ -74,7 +74,7 @@ python integrated_mindshow_system.py
 - `integrated_mindshow_system.py` - Main system (EEG, Pixelblaze, dashboard, all-in-one)
 - `config/config.py` - Hardware configuration constants
 - `Patterns/` - Pixelblaze JavaScript pattern files
-- `start_mindshow.sh` / `stop_mindshow.sh` - Process management scripts
+- `start_mindshow_venv.sh` / `stop_mindshow.sh` - Process management scripts
 
 ## Project Phases
 
